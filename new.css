@@ -397,30 +397,33 @@ input[type="text"][readonly] {
 
 .actual-spend-controls {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  grid-template-columns: max-content 9rem max-content 9rem max-content 9rem max-content;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  overflow-x: auto;
+}
+
+.actual-spend-controls label {
+  margin: 0;
+  white-space: nowrap;
+}
+
+.actual-spend-controls input,
+.actual-spend-controls button {
+  min-height: 36px;
+  padding: 0.35rem;
 }
 
 #actual-spend-message {
+  grid-column: 1 / -1;
   margin: 0;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
 }
 
 .purchase-wrapper {
   height: calc(100vh - 120px);
   overflow-y: auto;
-}
-
-@media (min-width: 768px) {
-  .actual-spend-controls {
-    grid-template-columns: repeat(4, minmax(120px, 1fr));
-    align-items: end;
-  }
-
-  .actual-spend-controls p {
-    grid-column: 1 / -1;
-  }
 }
 
 /*
