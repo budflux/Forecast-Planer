@@ -395,13 +395,22 @@ input[type="text"][readonly] {
   font-size: 1rem;
 }
 
+.purchase-toolbar {
+  gap: 0.75rem;
+  overflow-x: auto;
+}
+
+.purchase-toolbar h2,
+.purchase-toolbar > button {
+  flex: 0 0 auto;
+}
+
 .actual-spend-controls {
   display: grid;
-  grid-template-columns: max-content 9rem max-content 9rem max-content 9rem max-content;
+  grid-template-columns: max-content 8rem max-content 8rem max-content 8rem max-content;
   align-items: center;
-  gap: 0.4rem;
-  margin-top: 0.5rem;
-  overflow-x: auto;
+  gap: 0.35rem;
+  min-width: max-content;
 }
 
 .actual-spend-controls label {
@@ -416,9 +425,14 @@ input[type="text"][readonly] {
 }
 
 #actual-spend-message {
+  display: none;
   grid-column: 1 / -1;
   margin: 0;
   font-size: 0.8rem;
+}
+
+#actual-spend-message:not(:empty) {
+  display: block;
 }
 
 .purchase-wrapper {
