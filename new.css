@@ -400,9 +400,12 @@ input[type="text"][readonly] {
   overflow-x: auto;
 }
 
-.purchase-toolbar h2,
-.purchase-toolbar > button {
-  flex: 0 0 auto;
+.purchase-toolbar h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: max-content;
+  white-space: nowrap;
 }
 
 .actual-spend-controls {
