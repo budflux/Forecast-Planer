@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Weekly Forecast Report</title>
+  <link rel="stylesheet" href="report.css">
+</head>
+<body>
+  <main>
+    <header class="report-header">
+      <div><h1>Weekly Forecast Report</h1><p id="report-summary"></p></div>
+      <button type="button" id="close-report">Close Report</button>
+    </header>
+    <div class="table-wrapper">
+      <table>
+        <caption class="visually-hidden">Weekly forecast results</caption>
+        <thead>
+          <tr><th scope="col">Week</th><th scope="col">Date</th><th scope="col">Rate</th><th scope="col">Rental</th><th scope="col">Purchases</th><th scope="col">Deposits</th><th scope="col">Interest</th><th scope="col">Principal</th><th scope="col">Repayment</th><th scope="col">Loan Balance</th><th scope="col">Offset</th><th scope="col">Redraw</th><th scope="col">Gap</th></tr>
+        </thead>
+        <tbody id="report-body"></tbody>
+      </table>
+    </div>
+  </main>
+  <script src="report.js"></script>
+</body>
+</html>
