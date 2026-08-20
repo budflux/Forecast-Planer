@@ -377,6 +377,11 @@ header button.active {
 
 /* Placeholder - Header duplicate removed */
 
+#purchase-total {
+  width: auto;
+  margin-left: 0.5rem;
+}
+
 #targetDateResult,
 #targetAmountResult {
   background: #f4f6f8;
