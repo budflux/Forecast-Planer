@@ -16,6 +16,26 @@ body {
   color: #222;
 }
 
+#auth-panel {
+  max-width: 28rem;
+  margin: 10vh auto;
+}
+
+#auth-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+#auth-panel[hidden],
+body.signed-out > header,
+body.signed-out > main {
+  display: none;
+}
+
+body:not(.signed-out) > #auth-panel {
+  display: none;
+}
+
 h1, h2, h3 {
   margin: 1.5rem 0 1rem 0;
   padding: 0;

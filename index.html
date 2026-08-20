@@ -7,8 +7,17 @@
   <link rel="stylesheet" href="new.css">
 </head>
 <body>
+  <section id="auth-panel" aria-labelledby="auth-title">
+    <h1 id="auth-title">Forecast Planner</h1>
+    <p id="auth-message">Sign in to sync your planner across devices.</p>
+    <form id="auth-form">
+      <label for="auth-email">Email address</label>
+      <input id="auth-email" type="email" autocomplete="email" required>
+      <button type="submit">Send sign-in link</button>
+    </form>
+  </section>
   <header>
-    <h1 class="page-title"><span>Forecast Planner</span><button data-action="update">Update</button><button data-action="report">Report</button></h1>
+    <h1 class="page-title"><span>Forecast Planner</span><button data-action="update">Update</button><button data-action="report">Report</button><button data-action="sign-out">Sign out</button></h1>
     <nav aria-label="Main navigation">
       <button class="nav-btn" data-page="page-forecast">Forecast</button>
       <button class="nav-btn" data-page="page-earnings">Earnings</button>
@@ -77,7 +86,8 @@
       <div class="forecast-wrapper"><div class="forecast-grid headers"><div class="card header">Period</div><div class="card header">Spend</div><div class="card header">Deposits</div><div class="card header">Offset</div><div class="card header">Loan Outstanding</div><div class="card header">Redraw</div><div class="card header">Gap</div></div><div id="forecast-container"></div></div>
     </section>
   </main>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="supabase-config.js"></script>
   <script src="script.js"></script>
 </body>
 </html>

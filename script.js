@@ -1,13 +1,6 @@
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
-CREATE TABLE IF NOT EXISTS earnings (id TEXT PRIMARY KEY, fromDate TEXT, toDate TEXT, weeklyWage REAL, weeklySpend REAL);
-CREATE TABLE IF NOT EXISTS rentals (id TEXT PRIMARY KEY, fromDate TEXT, toDate TEXT, weeklyRental REAL);
-CREATE TABLE IF NOT EXISTS purchases (id TEXT PRIMARY KEY, date TEXT, description TEXT, amount REAL, includeFlag INTEGER);
-CREATE TABLE IF NOT EXISTS deposits (id TEXT PRIMARY KEY, depositDate TEXT, description TEXT, amount REAL);
-CREATE TABLE IF NOT EXISTS fixed_costs (id TEXT PRIMARY KEY, startYear INTEGER, endYear INTEGER, totalYearlyCost REAL);
-CREATE TABLE IF NOT EXISTS loan_inputs (id TEXT PRIMARY KEY, effectiveDate TEXT, interestRate REAL, weeklyRepayment REAL);`;
-
 const id = () => crypto.randomUUID();
+const { url: supabaseUrl, anonKey: supabaseAnonKey } = window.SUPABASE_CONFIG || {};
+const supabaseClient = window.supabase?.createClient(supabaseUrl, supabaseAnonKey);
 const money = value => `$${Number(value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 const dateOnly = value => {
   if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
@@ -19,35 +12,32 @@ const inRange = (date, from, to) => validDate(from) && validDate(to) && dateOnly
 const isDateInWeek = (value, weekStart) => inRange(value, weekStart, new Date(dateOnly(weekStart).getTime() + 6 * 86400000));
 
 class DataRepository {
+  constructor(client, user) { this.client = client; this.user = user; this.cache = {}; this.settings = {}; }
   async init() {
-    const SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}` });
-    const saved = localStorage.getItem('forecastDB');
-    this.db = saved ? new SQL.Database(new Uint8Array(JSON.parse(saved))) : new SQL.Database();
-    this.db.run(SCHEMA);
-    const fixedColumns = this.rows('PRAGMA table_info(fixed_costs)').map(column => column.name);
-    if (!fixedColumns.includes('startYear')) this.db.run('ALTER TABLE fixed_costs ADD COLUMN startYear INTEGER');
-    if (!fixedColumns.includes('endYear')) this.db.run('ALTER TABLE fixed_costs ADD COLUMN endYear INTEGER');
-    if (!fixedColumns.includes('totalYearlyCost')) this.db.run('ALTER TABLE fixed_costs ADD COLUMN totalYearlyCost REAL');
-    if (fixedColumns.includes('year')) this.db.run('UPDATE fixed_costs SET startYear = COALESCE(startYear, year), endYear = COALESCE(endYear, year), totalYearlyCost = COALESCE(totalYearlyCost, insurance + rego + rates + bodyCorporate)');
-    this.save();
+    const tables = ['earnings', 'rentals', 'purchases', 'deposits', 'fixed_costs', 'loan_inputs'];
+    const results = await Promise.all(tables.map(table => this.client.from(table).select('*')));
+    results.forEach((result, index) => { if (result.error) throw result.error; this.cache[tables[index]] = result.data || []; });
+    const settings = await this.client.from('settings').select('key,value');
+    if (settings.error) throw settings.error;
+    this.settings = Object.fromEntries((settings.data || []).map(row => [row.key, row.value]));
   }
-  save() { localStorage.setItem('forecastDB', JSON.stringify(Array.from(this.db.export()))); }
-  rows(sql, params = []) {
-    const result = this.db.exec(sql, params);
-    if (!result.length) return [];
-    return result[0].values.map(row => Object.fromEntries(result[0].columns.map((key, i) => [key, row[i]])));
+  setting(key) { return this.settings[key] ?? ''; }
+  async setSetting(key, value) {
+    const row = { user_id: this.user.id, key, value: String(value) };
+    const { error } = await this.client.from('settings').upsert(row, { onConflict: 'user_id,key' });
+    if (error) throw error;
+    this.settings[key] = row.value;
   }
-  run(sql, params = []) { this.db.run(sql, params); this.save(); }
-  setting(key) { return this.rows('SELECT value FROM settings WHERE key = ?', [key])[0]?.value ?? ''; }
-  setSetting(key, value) { this.run('INSERT OR REPLACE INTO settings(key,value) VALUES(?,?)', [key, String(value)]); }
-  collection(table, order = 'id') { return this.rows(`SELECT * FROM ${table} ORDER BY ${order}`); }
-  saveCollection(table, fields, records) {
-    this.db.run(`DELETE FROM ${table}`);
-    const savedFields = table === 'purchases' || table === 'loan_inputs' ? fields : fields.filter(field => field !== 'id');
-    const keys = savedFields.join(',');
-    const marks = savedFields.map(() => '?').join(',');
-    records.forEach(record => this.db.run(`INSERT INTO ${table}(${keys}) VALUES(${marks})`, savedFields.map(field => record[field])));
-    this.save();
+  collection(table, order = 'id') { return [...(this.cache[table] || [])].sort((a, b) => String(a[order] || '').localeCompare(String(b[order] || ''))); }
+  async saveCollection(table, fields, records) {
+    const dateFields = new Set(['fromDate', 'toDate', 'date', 'depositDate', 'effectiveDate']);
+    const rows = records.map(record => ({ ...Object.fromEntries(fields.map(field => [field, dateFields.has(field) && record[field] === '' ? null : record[field]])), user_id: this.user.id }));
+    const { error: deleteError } = await this.client.from(table).delete().eq('user_id', this.user.id);
+    if (deleteError) throw deleteError;
+    if (!rows.length) { this.cache[table] = []; return; }
+    const { data, error } = await this.client.from(table).insert(rows).select();
+    if (error) throw error;
+    this.cache[table] = data || rows;
   }
   getData() {
     return {
@@ -117,10 +107,25 @@ function runForecast(settings, data) {
 }
 
 class CostProjectorApp {
-  constructor() { this.repo = new DataRepository(); this.data = {}; this.settings = {}; this.forecast = { weeklyResults: [] }; }
+  constructor() { this.repo = null; this.data = {}; this.settings = {}; this.forecast = { weeklyResults: [] }; }
   async start() {
+    if (!supabaseClient || !supabaseAnonKey || supabaseAnonKey.startsWith('PASTE_')) throw new Error('Add the Supabase anon key to supabase-config.js.');
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    supabaseClient.auth.onAuthStateChange(event => { if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') window.location.reload(); });
+    if (!session) return this.showAuth();
+    this.repo = new DataRepository(supabaseClient, session.user);
     await this.repo.init();
     this.load(); this.bindEvents(); this.render(); this.showPage('page-forecast');
+  }
+  showAuth() {
+    document.body.classList.add('signed-out');
+    const form = document.getElementById('auth-form');
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const email = document.getElementById('auth-email').value;
+      const { error } = await supabaseClient.auth.signInWithOtp({ email, options: { emailRedirectTo: window.location.href } });
+      document.getElementById('auth-message').textContent = error ? error.message : 'Check your email for the sign-in link.';
+    });
   }
   load() {
     this.data = this.repo.getData();
@@ -132,6 +137,7 @@ class CostProjectorApp {
       if (event.target.closest('[data-page]')) this.showPage(event.target.closest('[data-page]').dataset.page);
       if (action === 'update') this.refresh();
       if (action === 'report') this.openForecastReport();
+      if (action === 'sign-out') supabaseClient.auth.signOut();
       if (action === 'add-earning') this.add('earnings', { fromDate: '', toDate: '', weeklyWage: 0, weeklySpend: 0 });
       if (action === 'add-fixed') this.add('fixedCosts', { startYear: 0, endYear: 0, totalYearlyCost: 0 });
       if (action === 'add-deposit') this.add('deposits', { depositDate: '', description: '', amount: 0 });
@@ -148,9 +154,9 @@ class CostProjectorApp {
   add(table, record) { record.id = id(); this.data[table].push(record); this.save(); this.render(); }
   addRate() { const date = document.getElementById('changeDate').value, rate = Number(document.getElementById('changeRate').value || 0); if (!date) return; this.data.loanInputs.push({ id: id(), effectiveDate: date, interestRate: rate, weeklyRepayment: Number(document.getElementById('changeRepayment').value || 0) }); this.save(); this.render(); }
   remove(table, recordId) { this.data[table] = this.data[table].filter(row => String(row.id) !== String(recordId)); this.save(); this.render(); }
-  saveSettings() { this.settings = { loanStartDate: document.getElementById('loanStartDate').value, loanTerm: Number(document.getElementById('loanTerm').value || 0), loanAmount: Number(document.getElementById('loanAmount').value || 0), interestRate: Number(document.getElementById('interestRate').value || 0) }; Object.entries(this.settings).forEach(([key, value]) => this.repo.setSetting(key, value)); }
+  saveSettings() { this.settings = { loanStartDate: document.getElementById('loanStartDate').value, loanTerm: Number(document.getElementById('loanTerm').value || 0), loanAmount: Number(document.getElementById('loanAmount').value || 0), interestRate: Number(document.getElementById('interestRate').value || 0) }; Object.entries(this.settings).forEach(([key, value]) => this.repo.setSetting(key, value).catch(error => console.error('Could not save setting', error))); }
   readRow(row) { const table = row.closest('[data-table]').dataset.table, record = this.data[table].find(item => String(item.id) === row.dataset.id); if (!record) return; row.querySelectorAll('[name]').forEach(input => { record[input.name] = input.type === 'checkbox' ? (input.checked ? 1 : 0) : input.type === 'number' ? Number(input.value || 0) : input.value; }); }
-  save() { const specs = { earnings: ['id','fromDate','toDate','weeklyWage','weeklySpend'], rentals: ['id','fromDate','toDate','weeklyRental'], purchases: ['id','date','description','amount','includeFlag'], deposits: ['id','depositDate','description','amount'], fixedCosts: ['id','startYear','endYear','totalYearlyCost'], loanInputs: ['id','effectiveDate','interestRate','weeklyRepayment'] }; Object.entries(specs).forEach(([table, fields]) => this.repo.saveCollection(table === 'fixedCosts' ? 'fixed_costs' : table === 'loanInputs' ? 'loan_inputs' : table, fields, this.data[table])); }
+  async save() { const specs = { earnings: ['id','fromDate','toDate','weeklyWage','weeklySpend'], rentals: ['id','fromDate','toDate','weeklyRental'], purchases: ['id','date','description','amount','includeFlag'], deposits: ['id','depositDate','description','amount'], fixedCosts: ['id','startYear','endYear','totalYearlyCost'], loanInputs: ['id','effectiveDate','interestRate','weeklyRepayment'] }; try { await Promise.all(Object.entries(specs).map(([table, fields]) => this.repo.saveCollection(table === 'fixedCosts' ? 'fixed_costs' : table === 'loanInputs' ? 'loan_inputs' : table, fields, this.data[table]))); } catch (error) { console.error('Could not save planner data', error); } }
   refresh(render = true) { this.forecast = runForecast(this.settings, this.data); if (render) this.render(); }
   showPage(page) { document.querySelectorAll('.app-page').forEach(section => section.classList.toggle('active', section.id === page)); document.querySelectorAll('.nav-btn').forEach(button => button.classList.toggle('active', button.dataset.page === page)); }
   render() { this.refresh(false); this.renderSettings(); this.renderRows('earning-container', 'earnings', [['date','fromDate'],['date','toDate'],['number','weeklyWage'],['number','weeklySpend']]); this.renderRows('fixed-cost-container', 'fixedCosts', [['number','startYear'],['number','endYear'],['number','totalYearlyCost']]); this.renderRows('offset-deposit-container', 'deposits', [['date','depositDate'],['text','description'],['number','amount']]); this.renderRows('rental-container', 'rentals', [['date','fromDate'],['date','toDate'],['number','weeklyRental']]); this.renderRows('purchase-container', 'purchases', [['date','date'],['text','description'],['number','amount'],['checkbox','includeFlag']]); this.renderForecast(); }
