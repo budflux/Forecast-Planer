@@ -26,6 +26,10 @@ body {
   gap: 0.75rem;
 }
 
+#offsetDate {
+  color: #0057b8;
+}
+
 #auth-panel[hidden],
 body.signed-out > header,
 body.signed-out > main {
