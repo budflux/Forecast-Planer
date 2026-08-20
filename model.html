@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Forecast Dashboard</title>
+    <link rel="stylesheet" href="new.css" />
+  </head>
+  <body>
+    <header>
+      <h1 class="page-title">
+        <span>Forecast Dashboard</span>
+        <button data-action="update">Update</button>
+        <button data-action="report">Report</button>
+      </h1>
+
+      <nav>
+        <button class="nav-btn" data-page="page-forecast">Forecast</button>
+        <button class="nav-btn" data-page="page-earnings">Earnings</button>
+        <button class="nav-btn" data-page="page-loan-settings">Loan Settings</button>
+        <button class="nav-btn" data-page="page-purchases">Purchases</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="page-loan-settings" class="loan-settings app-page">
+        <!-- Dashboard Metrics -->
+        <h2>Interest Cost Per Year</h2>
+        <div class="six-card-grid" id="interest-cost-grid">
+          <!-- Populated by App -->
+        </div>
+
+        <h2>Offset Balance</h2>
+        <div class="six-card-grid" id="offset-balance-grid">
+          <!-- Populated by App -->
+        </div>
+
+        <h2>Loan Settings</h2>
+        <div class="five-card-grid changes-grid">
+          <input type="date" id="loanStartDate" name="loanStartDate" class="save-trigger" placeholder="Loan Start">
+          <input type="number" id="loanTerm" name="loanTerm" class="save-trigger" placeholder="Term (Years)">
+          <input type="number" id="loanAmount" name="loanAmount" class="save-trigger" placeholder="Amount">
+          <input type="number" id="interestRate" name="interestRate" step="0.01" class="save-trigger" placeholder="Rate (%)">
+          <input type="number" id="weeklyRepayment" readonly placeholder="Weekly Repayment">
+        </div>
+      </section>
+
+      <section id="page-earnings" class="earnings-sheet app-page">
+        <div class="sheet-header">
+          <h2>Wage Income</h2>
+          <button id="add-earning-row">+ Add Row</button>
+        </div>
+        <div id="earning-container"></div>
+      </section>
+
+      <section id="page-purchases" class="purchase-sheet app-page">
+        <div class="sheet-header">
+          <h2>Purchase Planner <span id="purchase-total">$0</span></h2>
+          <button id="add-purchase-btn">+ Add Purchase</button>
+        </div>
+        <div id="purchase-container"></div>
+      </section>
+
+      <section id="page-forecast" class="forecast-page app-page">
+        <div id="forecast-container"></div>
+      </section>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
+    <script src="script.js"></script>
+  </body>
+</html>

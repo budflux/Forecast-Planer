@@ -1,0 +1,458 @@
+/* ------------------
+   Base
+------------------ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #f4f6f8;
+  color: #222;
+}
+
+h1,
+h2 {
+  margin-top: 1.5rem;
+}
+
+section {
+  margin-bottom: 2rem;
+}
+
+/* ------------------
+   Navigation
+------------------ */
+
+header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+header button {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* ------------------
+   Common Card Styling
+------------------ */
+
+.card {
+  background: #fff;
+  border: 1px solid #d8dde4;
+  border-radius: 8px;
+  padding: 0.75rem;
+}
+
+.card.header {
+  background: #1f4e79;
+  color: white;
+  font-weight: 600;
+  text-align: center;
+}
+
+label {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+input,
+select,
+button {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #c8d0d8;
+  border-radius: 6px;
+  padding: 0.5rem;
+  font-size: 1rem;
+}
+
+/* ------------------
+   Section Headers
+------------------ */
+
+.sheet-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+
+.sheet-header h2 {
+  margin: 0;
+}
+.page-title {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+
+  margin-bottom: 20px;
+}
+
+.page-title button {
+  padding: 8px 14px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sheet-header button {
+  width: auto;
+  min-width: 140px;
+}
+
+/* ------------------
+   Generic Grids
+------------------ */
+
+.four-card-grid,
+.five-card-grid,
+.six-card-grid,
+.loan-change-grid,
+.earning-grid,
+.fixed-cost-grid,
+.offset-grid,
+.purchase-grid,
+.forecast-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.purchase-grid {
+  margin: 0;
+}
+
+/* ------------------
+   Mobile First
+------------------ */
+
+.four-card-grid,
+.five-card-grid,
+.six-card-grid,
+.loan-change-grid,
+.earning-grid,
+.fixed-cost-grid,
+.offset-grid,
+/*.purchase-grid, */
+.forecast-grid {
+  grid-template-columns: 1fr;
+}
+
+/* ------------------
+   Tablet
+------------------ */
+
+@media (min-width: 768px) {
+  .four-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .five-card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .six-card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .earning-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .fixed-cost-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .offset-grid {
+    grid-template-columns: 1fr 2fr 1fr;
+  }
+
+  .purchase-grid {
+    grid-template-columns: 1fr 2fr 1fr 120px;
+  }
+
+  .forecast-grid {
+    grid-template-columns: 2fr repeat(5, 1fr);
+  }
+}
+
+/* ------------------
+   Desktop
+------------------ */
+
+@media (min-width: 1200px) {
+  .four-card-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .five-card-grid {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .six-card-grid {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
+/* ------------------
+   Dynamic Containers
+------------------ */
+
+#loan-input-container,
+#earning-container,
+#fixed-cost-container,
+#offset-deposit-container,
+#rental-container,
+#forecast-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+#purchase-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* ------------------
+   Forecast
+------------------ */
+
+.forecast-row .card {
+  text-align: center;
+}
+
+.period {
+  font-weight: 600;
+}
+
+/* ------------------
+   Page Switching
+------------------ */
+
+.app-page {
+  display: none;
+}
+
+.app-page.active {
+  display: block;
+}
+
+/* ------------------
+   Rental Buttons
+------------------ */
+
+.rental-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.rental-actions button {
+  flex: 1;
+}
+
+/* ------------------
+   Readonly Inputs
+------------------ */
+
+input[readonly] {
+  background: #f4f6f8;
+  font-weight: 600;
+}
+
+.forecast-wrapper {
+  height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+/*
+.forecast-page {
+  height: calc(100vh - 100px);
+}
+
+.forecast-wrapper {
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid #d8dde4;
+  border-radius: 8px;
+} */
+
+.forecast-grid.headers {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #1f4e79;
+}
+
+.forecast-grid.headers .card {
+  background: #1f4e79;
+  color: white;
+}
+
+button {
+  background: #1f4e79;
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #163752;
+}
+
+header button.active {
+  background: #163752;
+  color: white;
+  border-color: #163752;
+  /*box-shadow: 0 0 0 3px rgba(0, 120, 212, 0.35); */
+}
+
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+
+  z-index: 1000;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  padding: 1rem;
+  background: #f4f6f8;
+  border-bottom: 1px solid #ccc;
+}
+
+body {
+  padding-top: 100px;
+}
+
+#targetDateResult,
+#targetAmountResult {
+  background: #f4f6f8;
+  font-weight: 600;
+  color: #1f4e79;
+}
+
+input[type="number"],
+input[type="text"][readonly] {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.purchase-wrapper {
+  height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+/*
+.purchase-wrapper {
+  max-height: 70vh;
+  overflow-y: auto;
+} */
+
+.purchase-header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+/* Purchase rows only */
+
+#purchase-container .card {
+  padding: 0.25rem;
+}
+
+#purchase-container input {
+  width: 100%;
+  min-height: 28px;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.9rem;
+}
+
+/* Make checkbox smaller and centred */
+
+#purchase-container input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  display: block;
+  margin: auto;
+}
+
+/* Forecast rows only */
+/*#forecast-container .card {
+  padding: 0.15rem;
+  border-radius: 4px;
+  min-height: 24px;
+  font-size: 0.8rem;
+} */
+/*
+#forecast-container {
+  gap: 0;
+}
+
+#forecast-container .forecast-grid {
+  gap: 2px;
+  margin: 0;
+}
+
+#forecast-container .card {
+  padding: 4px 6px;
+  border-radius: 4px;
+  min-height: 24px;
+  font-size: 0.85rem;
+  line-height: 1.2;
+}
+*/
+
+#forecast-container .forecast-grid {
+  gap: 2px;
+  margin: 0;
+}
+#forecast-container .card {
+  padding: 0.25rem;
+  border-radius: 4px;
+}
+
+#forecast-container .card {
+  padding: 4px 6px;
+  min-height: 28px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+#forecast-container .period {
+  font-weight: 700;
+}
+/*
+header {
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+
+  padding: 1rem;
+  background: #f4f6f8;
+  border-bottom: 1px solid #ccc;
+}
+*/
+
+

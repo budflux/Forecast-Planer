@@ -1,0 +1,2488 @@
+/* =====================================================
+   CONSTANTS
+===================================================== */
+
+let db;
+
+async function initDB() {
+  const SQL = await initSqlJs({
+    locateFile: (file) =>
+      `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`,
+  });
+
+  // Load existing database if it exists
+  const savedDb = localStorage.getItem("forecastDB");
+
+  if (savedDb) {
+    const bytes = new Uint8Array(JSON.parse(savedDb));
+    db = new SQL.Database(bytes);
+    console.log("Existing database loaded");
+  } else {
+    db = new SQL.Database();
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS earnings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fromDate TEXT,
+        toDate TEXT,
+        weeklyWage REAL,
+        weeklySpend REAL
+      );
+
+      CREATE TABLE IF NOT EXISTS rentals (
+        id INTEGER PRIMARY KEY,
+        fromDate TEXT,
+        toDate TEXT,
+        weeklyRental REAL
+      );
+
+      CREATE TABLE IF NOT EXISTS purchases (
+        id TEXT PRIMARY KEY,
+        date  TEXT,
+        description TEXT,
+        amount  REAL,
+        includeFlag  INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS deposits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        depositDate TEXT,
+        description TEXT,
+        amount REAL
+      );
+      CREATE TABLE IF NOT EXISTS fixed_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER,
+    insurance REAL,
+    rego REAL,
+    rates REAL,
+    bodyCorporate REAL
+);
+
+CREATE TABLE IF NOT EXISTS loan_inputs (
+    id TEXT PRIMARY KEY,
+    effectiveDate TEXT,
+    interestRate REAL,
+    weeklyRepayment REAL
+);
+
+CREATE TABLE IF NOT EXISTS forecast_results (
+    weekNumber INTEGER,
+    weekDate TEXT,
+    rate REAL,
+    weeklyRental REAL,
+    purchases REAL,
+    interest REAL,
+    principal REAL,
+    repayment REAL,
+    loanBalance REAL,
+    offsetBalance REAL,
+    redrawAmount REAL,
+    gap REAL
+);
+    `);
+
+    saveDB();
+
+    console.log("New database created");
+  }
+
+  console.log("SQLite loaded");
+}
+
+function saveDB() {
+  const data = db.export();
+  localStorage.setItem("forecastDB", JSON.stringify(Array.from(data)));
+}
+
+function saveSetting(key, value) {
+  db.run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [
+    key,
+    String(value),
+  ]);
+
+  saveDB();
+}
+
+function getSetting(key) {
+  const result = db.exec(`SELECT value FROM settings WHERE key = '${key}'`);
+
+  if (result.length === 0) {
+    return null;
+  }
+
+  return result[0].values[0][0];
+}
+
+initDB();
+
+console.log(typeof initSqlJs);
+//console.log("SCRIPT.JS LOADED");
+
+function query(sql, params = []) {
+  db.run(sql, params);
+  saveDB();
+}
+
+function select(sql, params = []) {
+  const result = db.exec(sql, params);
+
+  if (!result.length) {
+    return [];
+  }
+
+  const cols = result[0].columns;
+
+  return result[0].values.map((row) => {
+    const obj = {};
+
+    cols.forEach((col, i) => {
+      obj[col] = row[i];
+    });
+
+    return obj;
+  });
+}
+
+function getLoanInputs() {
+  return select(`
+    SELECT *
+    FROM loan_inputs
+    ORDER BY effectiveDate
+  `);
+}
+//-----------------------------------
+// STORAGE
+//------------------------------------
+
+function saveLoanInputsDB(loanInputs) {
+  query("DELETE FROM loan_inputs");
+
+  loanInputs.forEach((loan) => {
+    query(
+      `
+      INSERT INTO loan_inputs
+      (
+        id,
+        effectiveDate,
+        interestRate,
+        weeklyRepayment
+      )
+      VALUES (?, ?, ?, ?)
+      `,
+      [loan.id, loan.effectiveDate, loan.interestRate, loan.weeklyRepayment],
+    );
+  });
+}
+
+let loanInputs = [];
+
+function savePurchasesDB(purchases) {
+  query("DELETE FROM purchases");
+
+  purchases.forEach((purchase) => {
+    query(
+      `
+      INSERT INTO purchases
+      (
+        id,
+        date,
+        description,
+        amount,
+        includeFlag
+      )
+      VALUES (?, ?, ?, ?, ?)
+      `,
+      [
+        purchase.id,
+        purchase.date,
+        purchase.description,
+        purchase.amount,
+        purchase.include ? 1 : 0,
+      ],
+    );
+  });
+}
+
+function loadPurchasesDB() {
+  return select(`
+    SELECT
+      id,
+      date,
+      description,
+      amount,
+      includeFlag
+    FROM purchases
+  `).map((row) => ({
+    id: row.id,
+    date: row.date,
+    description: row.description,
+    amount: Number(row.amount),
+    include: Boolean(row.includeFlag),
+  }));
+}
+
+function saveEarningsDB(earnings) {
+  query("DELETE FROM earnings");
+
+  earnings.forEach((earning) => {
+    query(
+      `
+      INSERT INTO earnings
+      (
+        fromDate,
+        toDate,
+        weeklyWage,
+        weeklySpend
+      )
+      VALUES (?, ?, ?, ?)
+      `,
+      [
+        earning.fromDate,
+        earning.toDate,
+        earning.weeklyWage,
+        earning.weeklySpend,
+      ],
+    );
+  });
+}
+
+function loadEarningsDB() {
+  return select(`
+    SELECT
+      fromDate,
+      toDate,
+      weeklyWage,
+      weeklySpend
+    FROM earnings
+    ORDER BY fromDate
+  `);
+}
+
+function saveRentalsDB(rentals) {
+  query("DELETE FROM rentals");
+
+  rentals.forEach((rental) => {
+    query(
+      `
+      INSERT INTO rentals
+      (
+        id,
+        fromDate,
+        toDate,
+        weeklyRental
+      )
+      VALUES (?, ?, ?, ?)
+      `,
+      [rental.id, rental.fromDate, rental.toDate, rental.weeklyRental],
+    );
+  });
+}
+
+function loadRentalsDB() {
+  return select(`
+    SELECT
+      id,
+      fromDate,
+      toDate,
+      weeklyRental
+    FROM rentals
+    ORDER BY fromDate
+  `);
+}
+
+function saveFixedCostsDB(costs) {
+  saveSetting("fixedCosts", JSON.stringify(costs));
+}
+
+function loadFixedCostsDB() {
+  const saved = getSetting("fixedCosts");
+
+  if (saved) {
+    return JSON.parse(saved);
+  }
+
+  return select(`
+    SELECT year, insurance, rego, rates, bodyCorporate
+    FROM fixed_costs
+    ORDER BY year
+  `).map((cost) => ({
+    startYear: cost.year,
+    endYear: cost.year,
+    totalYearlyCost:
+      Number(cost.insurance || 0) +
+      Number(cost.rego || 0) +
+      Number(cost.rates || 0) +
+      Number(cost.bodyCorporate || 0),
+  }));
+}
+/* =====================================================
+   UTILITIES
+===================================================== */
+function generateId() {
+  return Date.now() + Math.random();
+}
+
+function formatCurrency(value) {
+  return (
+    "$" +
+    Number(value).toLocaleString(undefined, {
+      maximumFractionDigits: 0,
+    })
+  );
+}
+
+function getQuarterKey(dateString) {
+  const d = new Date(dateString);
+
+  const year = d.getFullYear();
+  const month = d.getMonth() + 1;
+
+  let q = 1;
+
+  if (month > 3) q = 2;
+  if (month > 6) q = 3;
+  if (month > 9) q = 4;
+
+  return `${year}-q${q}`;
+}
+
+function quarterStartDate(quarterKey) {
+  const [year, quarter] = quarterKey.split("-q");
+
+  return new Date(Number(year), (Number(quarter) - 1) * 3, 1);
+}
+
+function getForecastQuarters() {
+  const quarters = [];
+
+  for (let year = 2025; year <= 2031; year++) {
+    for (let quarter = 1; quarter <= 4; quarter++) {
+      quarters.push(`${year}-q${quarter}`);
+    }
+  }
+
+  return quarters;
+}
+
+function createForecastRows() {
+  //console.log("CREATE ROWS");
+  // console.log("createForecastRows", getLoanSettings());
+  const container = document.getElementById("forecast-container");
+  if (!container) return;
+
+  const settings = getLoanSettings();
+
+  if (
+    !settings.loanStartDate ||
+    !settings.loanTermYears ||
+    isNaN(new Date(settings.loanStartDate).getTime())
+  ) {
+    container.innerHTML = "";
+    return;
+  }
+
+  const startYear = new Date(settings.loanStartDate).getFullYear();
+  const endYear = startYear + Number(settings.loanTermYears) - 1;
+
+  const quarters = [
+    "Jan-March",
+    "April-June",
+    "July-September",
+    "October-December",
+  ];
+
+  container.innerHTML = "";
+
+  for (let year = startYear; year <= endYear; year++) {
+    for (let quarter = 0; quarter < 4; quarter++) {
+      const q = quarter + 1;
+
+      container.insertAdjacentHTML(
+        "beforeend",
+        `
+        <div class="forecast-grid forecast-row">
+          <div class="card period" id="period-${year}-q${q}">
+            ${quarters[quarter]} ${year}
+          </div>
+
+          <div class="card spend" id="spend-${year}-q${q}"></div>
+          <div class="card offset" id="offset-${year}-q${q}"></div>
+          <div class="card loan" id="loan-${year}-q${q}"></div>
+          <div class="card redraw" id="redraw-${year}-q${q}"></div>
+          <div class="card gap" id="gap-${year}-q${q}"></div>
+        </div>
+        `,
+      );
+    }
+  }
+}
+
+// Run on page load
+
+/* =====================================================
+   CALCULATIONS
+===================================================== */
+function calculateMonthlyRepayment(principal, annualRate, years) {
+  const monthlyRate = annualRate / 100 / 12;
+
+  const totalMonths = years * 12;
+
+  if (monthlyRate === 0) {
+    return principal / totalMonths;
+  }
+
+  const result =
+    (principal * monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) /
+    (Math.pow(1 + monthlyRate, totalMonths) - 1);
+
+  return result;
+}
+
+function calculateWeeklyLoanRepayment(principal, annualRate, years) {
+  const weeklyRate = annualRate / 100 / 52;
+  const totalWeeks = years * 52;
+
+  if (weeklyRate === 0) {
+    return principal / totalWeeks;
+  }
+
+  return (
+    (principal * weeklyRate * Math.pow(1 + weeklyRate, totalWeeks)) /
+    (Math.pow(1 + weeklyRate, totalWeeks) - 1)
+  );
+}
+
+function calculateTotalInterestCost(principal, annualRate, years) {
+  const weeklyRepayment = calculateWeeklyLoanRepayment(
+    principal,
+    annualRate,
+    years,
+  );
+
+  const totalWeeks = years * 52;
+  const totalPaid = weeklyRepayment * totalWeeks;
+
+  return totalPaid - principal;
+}
+
+function calculateLoanCostSummary(principal, annualRate, years) {
+  const weeklyRepayment = calculateWeeklyLoanRepayment(
+    principal,
+    annualRate,
+    years,
+  );
+
+  const totalWeeks = years * 52;
+  const totalPaid = weeklyRepayment * totalWeeks;
+  const totalInterest = totalPaid - principal;
+
+  return {
+    weeklyRepayment,
+    totalPaid,
+    totalInterest,
+  };
+}
+
+function calculateRedraw(
+  originalLoan,
+  annualRate,
+  loanTermYears,
+  weeksElapsed,
+  actualLoanBalance,
+) {
+  const weeklyRate = annualRate / 100 / 52;
+  const totalWeeks = loanTermYears * 52;
+  //console.log("weeksElapsed", weeksElapsed);
+  //console.log("totalWeeks", totalWeeks);
+
+  if (weeksElapsed >= totalWeeks) {
+    return 0;
+  }
+  const scheduledBalance =
+    originalLoan *
+    ((Math.pow(1 + weeklyRate, totalWeeks) -
+      Math.pow(1 + weeklyRate, weeksElapsed)) /
+      (Math.pow(1 + weeklyRate, totalWeeks) - 1));
+
+  const redraw = scheduledBalance - actualLoanBalance;
+  //console.log(scheduledBalance);
+  //console.log(redraw);
+  return Math.max(0, redraw);
+}
+
+/* =====================================================
+   PURCHASES
+===================================================== */
+function addPurchaseRow(data = {}) {
+  const container = document.getElementById("purchase-container");
+
+  if (!container) return;
+
+  const rowId = data.id || generateId();
+
+  const row = document.createElement("div");
+
+  row.dataset.id = rowId;
+
+  row.className = "purchase-grid purchase-row";
+
+  row.innerHTML = `
+    <div class="card">
+      <input
+        type="date"
+        name="purchaseDate"
+        id="purchase-date-${rowId}"
+        value="${data.date || ""}"
+      >
+    </div>
+
+    <div class="card">
+      <input
+        type="text"
+        name="purchaseDescription"
+        id="purchase-description-${rowId}"
+        value="${data.description || ""}"
+      >
+    </div>
+
+    <div class="card">
+      <input
+        type="number"
+        name="purchaseAmount"
+        id="purchase-amount-${rowId}"
+        value="${data.amount || ""}"
+      >
+    </div>
+
+    <div class="card">
+      <input
+        type="checkbox"
+        name="purchaseInclude"
+        id="purchase-include-${rowId}"
+        ${data.include ? "checked" : ""}
+      >
+    </div>
+  `;
+
+  container.appendChild(row);
+
+  row.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("input", () => {
+      savePurchases();
+      updateForecastPage();
+    });
+  });
+}
+
+function updatePurchaseTotal() {
+  const purchases = loadPurchasesDB();
+
+  const total = purchases
+    .filter((purchase) => purchase.include)
+    .reduce((sum, purchase) => sum + purchase.amount, 0);
+  // console.log("Total:", total);
+  const totalElement = document.getElementById("purchase-total");
+
+  if (totalElement) {
+    totalElement.textContent = formatCurrency(total);
+  }
+}
+
+function savePurchases() {
+  const rows = document.querySelectorAll(".purchase-row");
+
+  const purchases = [];
+
+  rows.forEach((row) => {
+    const inputs = row.querySelectorAll("input");
+
+    purchases.push({
+      id: row.dataset.id,
+      date: inputs[0].value,
+      description: inputs[1].value,
+      amount: Number(inputs[2].value || 0),
+      include: inputs[3].checked,
+    });
+  });
+
+  savePurchasesDB(purchases);
+  // console.log("updatePurchaseTotal fired");
+  updatePurchaseTotal();
+}
+
+//console.log("PURCHASE FIR");
+
+function initialisePurchasesPage() {
+  const button = document.getElementById("add-purchase-btn");
+
+  if (!button) return;
+
+  button.addEventListener("click", () => {
+    addPurchaseRow();
+  });
+
+  const container = document.getElementById("purchase-container");
+
+  container.innerHTML = "";
+
+  const purchases = loadPurchasesDB();
+
+  if (purchases.length === 0) {
+    addPurchaseRow();
+  } else {
+    purchases.forEach(addPurchaseRow);
+  }
+  updatePurchaseTotal();
+}
+function deletePurchase(id) {
+  const purchases = loadPurchasesDB();
+
+  const filtered = purchases.filter((purchase) => purchase.id !== id);
+
+  savePurchasesDB(filtered);
+
+  initialisePurchasesPage();
+  updateForecastPage();
+}
+
+function duplicatePurchase(id) {
+  const purchases = loadPurchasesDB();
+
+  const purchase = purchases.find((p) => p.id === id);
+
+  if (!purchase) return;
+
+  purchases.push({
+    ...purchase,
+    id: generateId(),
+  });
+
+  savePurchasesDB(purchases);
+
+  initialisePurchasesPage();
+  updateForecastPage();
+  updatePurchaseTotal();
+}
+
+/* =====================================================
+   EARNINGS
+===================================================== */
+function getInterestRateForEarning(fromDate, toDate) {
+  let loanInputs = getLoanInputs();
+
+  const matches = loanInputs
+    .filter(
+      (loan) =>
+        new Date(loan.interestRateDate) >= new Date(fromDate) &&
+        new Date(loan.interestRateDate) <= new Date(toDate),
+    )
+    .sort(
+      (a, b) => new Date(b.interestRateDate) - new Date(a.interestRateDate),
+    );
+
+  if (matches.length > 0) {
+    return Number(matches[0].interestRate);
+  }
+
+  return Number(getLoanSettings().interestRate || 0);
+}
+
+function addEarningRow(data = {}) {
+  const container = document.getElementById("earning-container");
+
+  if (!container) return;
+
+  const row = document.createElement("div");
+
+  row.className = "earning-grid earning-row";
+
+  row.innerHTML = `
+  <div class="card">
+    <input type="date"
+      class="from-date"
+      value="${data.fromDate || ""}">
+  </div>
+
+  <div class="card">
+    <input type="date"
+      class="to-date"
+      value="${data.toDate || ""}">
+  </div>
+
+  <div class="card">
+    <input type="number"
+      class="weekly-wage"
+      value="${data.weeklyWage || ""}">
+  </div>
+
+  <div class="card">
+    <input type="number"
+      class="weekly-spend"
+      value="${data.weeklySpend || ""}">
+  </div>
+  `;
+
+  container.appendChild(row);
+
+  row.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("input", () => {
+      saveEarnings();
+      updateForecastPage();
+    });
+  });
+}
+
+function saveEarnings() {
+  const rows = document.querySelectorAll(".earning-row");
+
+  const earnings = [];
+
+  rows.forEach((row) => {
+    earnings.push({
+      fromDate: row.querySelector(".from-date").value,
+
+      toDate: row.querySelector(".to-date").value,
+
+      weeklyWage: Number(row.querySelector(".weekly-wage").value || 0),
+
+      weeklySpend: Number(row.querySelector(".weekly-spend").value || 0),
+    });
+  });
+
+  saveEarningsDB(earnings);
+}
+
+function initialiseEarningsPage() {
+  const button = document.getElementById("add-earning-row");
+
+  if (!button) return;
+
+  button.addEventListener("click", addEarningRow);
+
+  const container = document.getElementById("earning-container");
+
+  container.innerHTML = "";
+
+  const earnings = loadEarningsDB();
+
+  if (earnings.length === 0) {
+    addEarningRow();
+  } else {
+    earnings.forEach(addEarningRow);
+  }
+}
+
+/* =====================================================
+   RENTALS
+===================================================== */
+
+function addRentalRow(data = {}) {
+  const container = document.getElementById("rental-container");
+
+  if (!container) return;
+
+  const row = document.createElement("div");
+
+  row.className = "four-card-grid";
+  row.dataset.id = data.id || generateId();
+  row.innerHTML = `
+    <div class="card">
+      <input
+        type="date"
+        class="from-date"
+        value="${data.fromDate || ""}"
+      >
+    </div>
+
+    <div class="card">
+      <input
+        type="date"
+        class="to-date"
+        value="${data.toDate || ""}"
+      >
+    </div>
+
+    <div class="card">
+      <input
+        type="number"
+        class="weekly-rental"
+        value="${data.weeklyRental ?? ""}"
+      >
+    </div>
+  `;
+
+  container.appendChild(row);
+
+  row.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("input", () => {
+      saveRentals();
+      updateForecastPage();
+    });
+  });
+}
+
+function saveRentals() {
+  //console.log("SAVE RENTALS FIRED");
+
+  const rows = document.querySelectorAll("#rental-container .four-card-grid");
+
+  // console.log("Rows:", rows.length);
+
+  const rentals = [];
+
+  rows.forEach((row) => {
+    rentals.push({
+      id: row.dataset.id,
+      fromDate: row.querySelector(".from-date")?.value || "",
+      toDate: row.querySelector(".to-date")?.value || "",
+      weeklyRental: Number(row.querySelector(".weekly-rental")?.value || 0),
+    });
+  });
+
+  //console.log("Saving:", rentals);
+
+  saveRentalsDB(rentals);
+}
+
+function initialiseRentals() {
+  const container = document.getElementById("rental-container");
+
+  if (!container) return;
+
+  document.getElementById("add-rental-row").onclick = () => {
+    addRentalRow();
+    saveRentals();
+    updateForecastPage();
+  };
+
+  document.getElementById("delete-rental-row").onclick = () => {
+    const rows = document.querySelectorAll("#rental-container .four-card-grid");
+
+    if (rows.length <= 1) {
+      return;
+    }
+
+    rows[rows.length - 1].remove();
+
+    saveRentals();
+    updateForecastPage();
+  };
+
+  container.innerHTML = "";
+
+  const rentals = loadRentalsDB();
+
+  if (rentals.length === 0) {
+    addRentalRow();
+    return;
+  }
+
+  rentals.forEach((rental) => {
+    addRentalRow(rental);
+  });
+}
+/*
+function initialiseRentals() {
+  const container = document.getElementById("rental-container");
+
+  if (!container) return;
+
+  document.getElementById("add-rental-row").onclick = () => {
+    addRentalRow();
+    saveRentals();
+  };
+
+  container.innerHTML = "";
+
+  const rentals = loadData(STORAGE_KEYS.rentals) || [];
+
+  if (rentals.length === 0) {
+    addRentalRow();
+    return;
+  }
+
+  rentals.forEach((rental) => {
+    addRentalRow(rental);
+  });
+}*/
+/* =====================================================
+   FIXED COSTS
+===================================================== */
+function addFixedCostRow(data = {}) {
+  const container = document.getElementById("fixed-cost-container");
+
+  if (!container) return;
+
+  const row = document.createElement("div");
+
+  row.className = "fixed-cost-grid fixed-cost-row";
+
+  row.innerHTML = `
+  <div class="card">
+    <input type="number" class="fixed-cost-start-year"
+      value="${data.startYear || ""}">
+  </div>
+
+  <div class="card">
+    <input type="number" class="fixed-cost-end-year"
+      value="${data.endYear || ""}">
+  </div>
+
+  <div class="card">
+    <input type="number" class="fixed-cost-total"
+      value="${data.totalYearlyCost || ""}">
+  </div>
+  `;
+
+  container.appendChild(row);
+
+  row.querySelectorAll("input").forEach((input) => {
+    // input.addEventListener("input", saveFixedCosts);
+    input.addEventListener("input", () => {
+      saveFixedCosts();
+      updateForecastPage();
+    });
+  });
+}
+
+function saveFixedCosts() {
+  const costs = [];
+
+  document.querySelectorAll(".fixed-cost-row").forEach((row) => {
+    const inputs = row.querySelectorAll("input");
+
+    costs.push({
+      startYear: Number(inputs[0].value || 0),
+      endYear: Number(inputs[1].value || 0),
+      totalYearlyCost: Number(inputs[2].value || 0),
+    });
+  });
+
+  saveFixedCostsDB(costs);
+}
+
+function initialiseFixedCostPage() {
+  const btn = document.getElementById("add-fixed-cost-row");
+
+  if (!btn) return;
+
+  btn.addEventListener("click", addFixedCostRow);
+
+  const data = loadFixedCostsDB();
+
+  const container = document.getElementById("fixed-cost-container");
+
+  container.innerHTML = "";
+
+  if (data.length === 0) {
+    addFixedCostRow();
+  } else {
+    data.forEach(addFixedCostRow);
+  }
+}
+
+/* =====================================================
+   OFFSETS
+===================================================== */
+function addOffsetDepositRow(data = {}) {
+  const container = document.getElementById("offset-deposit-container");
+
+  if (!container) return;
+
+  const row = document.createElement("div");
+
+  row.dataset.id = data.id || generateId();
+  row.className = "offset-grid offset-row";
+
+  row.innerHTML = `
+  <div class="card">
+    <input type="date"
+      value="${data.date || ""}">
+  </div>
+
+  <div class="card">
+    <input type="text"
+      value="${data.description || ""}">
+  </div>
+
+  <div class="card">
+    <input type="number"
+      value="${data.amount || ""}">
+  </div>
+  `;
+
+  container.appendChild(row);
+
+  row.querySelectorAll("input").forEach((input) => {
+    input.addEventListener("input", () => {
+      saveOffsetDeposits();
+      updateForecastPage();
+    });
+  });
+}
+
+function saveOffsetDeposits() {
+  const rows = document.querySelectorAll(".offset-row");
+
+  const deposits = [];
+
+  rows.forEach((row) => {
+    const inputs = row.querySelectorAll("input");
+
+    deposits.push({
+      id: row.dataset.id,
+      date: inputs[0].value,
+      description: inputs[1].value,
+      amount: Number(inputs[2].value || 0),
+    });
+  });
+
+  saveData(STORAGE_KEYS.offsetDeposits, deposits);
+}
+
+function initialiseOffsetPage() {
+  const btn = document.getElementById("add-offset-deposit-btn");
+
+  if (!btn) return;
+
+  btn.addEventListener("click", () => addOffsetDepositRow());
+
+  const container = document.getElementById("offset-deposit-container");
+
+  container.innerHTML = "";
+
+  const data = loadData(STORAGE_KEYS.offsetDeposits);
+
+  if (data.length === 0) {
+    addOffsetDepositRow();
+  } else {
+    data.forEach(addOffsetDepositRow);
+  }
+}
+/* =====================================================
+   LOAN SETTINGS
+===================================================== */
+
+// GETTERS
+function getLoanSettings() {
+  return {
+    loanStartDate: getSetting("loanStartDate"),
+    loanAmount: Number(getSetting("loanAmount") || 0),
+    interestRate: Number(getSetting("interestRate") || 0),
+    loanTermYears: Number(getSetting("loanTermYears") || 0),
+    weeklyRepayment: Number(getSetting("weeklyRepayment") || 0),
+  };
+}
+
+function getLoanInputs() {
+  return select(`
+    SELECT *
+    FROM loan_inputs
+    ORDER BY effectiveDate
+  `);
+}
+
+function saveLoanInputsDB(data) {
+  query("DELETE FROM loan_inputs");
+
+  data.forEach((row) => {
+    query(
+      `
+      INSERT INTO loan_inputs
+      (
+        id,
+        effectiveDate,
+        interestRate,
+        weeklyRepayment
+      )
+      VALUES (?, ?, ?, ?)
+      `,
+      [row.id, row.effectiveDate, row.interestRate, row.weeklyRepayment],
+    );
+  });
+}
+
+function updateWeeklyRepayment() {
+  //console.log("updateWeeklyRepayment fired");
+  const loanAmount = Number(document.getElementById("loanAmount")?.value || 0);
+
+  const interestRate = Number(
+    document.getElementById("interestRate")?.value || 0,
+  );
+
+  const loanTerm = Number(document.getElementById("loanTerm")?.value || 0);
+
+  if (!loanAmount || !loanTerm) {
+    return;
+  }
+
+  const repayment = calculateWeeklyLoanRepayment(
+    loanAmount,
+    interestRate,
+    loanTerm,
+  );
+
+  document.getElementById("weeklyRepayment").value = repayment.toFixed(2);
+
+  //console.log("Calculated repayment:", repayment);
+
+  saveLoanSettings();
+}
+// CALCULATIONS
+/* old weeklyRepayment
+function updateWeeklyRepayment() {
+  const loanAmount = Number(document.getElementById("loanAmount")?.value || 0);
+
+  const interestRate = Number(
+    document.getElementById("interestRate")?.value || 0,
+  );
+
+  const loanTerm = Number(document.getElementById("loanTerm")?.value || 0);
+
+  // console.log("updateWeeklyRepayment fired");
+  //console.log({ loanAmount, interestRate, loanTerm });
+
+  if (!loanAmount || !loanTerm) {
+    //console.log("exiting early");
+    return;
+  }
+
+  const repayment = calculateWeeklyLoanRepayment(
+    loanAmount,
+    interestRate,
+    loanTerm,
+  );
+
+  console.log("calculated repayment:", repayment);
+
+  document.getElementById("weeklyRepayment").value = repayment.toFixed(2);
+
+  console.log(
+    "field value now:",
+    document.getElementById("weeklyRepayment").value,
+  );
+
+  saveLoanSettings();
+}
+  */
+
+function updateChangedRepayment() {
+  // console.log("updateChangedRepayment fired");
+  const loanAmount = Number(document.getElementById("loanAmount")?.value || 0);
+
+  const interestRate = Number(
+    document.getElementById("interestRateChange")?.value || 0,
+  );
+
+  const loanTerm = Number(document.getElementById("loanTerm")?.value || 0);
+
+  if (!loanAmount || !loanTerm) return;
+
+  const repayment = calculateWeeklyLoanRepayment(
+    loanAmount,
+    interestRate,
+    loanTerm,
+  );
+
+  /* console.log({
+    loanAmount,
+    interestRate,
+    loanTerm,
+    repayment,
+  }); */
+
+  document.getElementById("weeklyRepaymentChange").value = repayment.toFixed(2);
+}
+//remove at some point
+/*function updateOffsetMilestone(weeklyResults) {
+  const match = weeklyResults.find(
+    (week) => week.offsetBalance >= week.loanBalance,
+  );
+
+  const dateField = document.getElementById("offsetDate");
+  const balanceField = document.getElementById("offsetBalanceEqual");
+
+  if (!match) {
+    if (dateField) dateField.value = "";
+    if (balanceField) balanceField.value = "";
+    return null;
+  }
+
+  if (dateField) {
+    dateField.value = match.weekDate.toISOString().split("T")[0];
+  }
+
+  if (balanceField) {
+    balanceField.value = formatCurrency(Math.round(match.offsetBalance));
+  }
+
+  return match;
+}*/
+
+// SAVERS
+//console.log("saveLoanSettings fired");
+// SAVERS
+
+function saveLoanSettings() {
+  try {
+    // console.log("1. entered saveLoanSettings");
+
+    const loanSettings = {
+      loanStartDate: document.getElementById("loanStartDate")?.value || "",
+
+      loanAmount: Number(document.getElementById("loanAmount")?.value || 0),
+
+      interestRate: Number(document.getElementById("interestRate")?.value || 0),
+
+      loanTermYears: Number(document.getElementById("loanTerm")?.value || 0),
+
+      weeklyRepayment: Number(
+        document.getElementById("weeklyRepayment")?.value || 0,
+      ),
+    };
+
+    //console.log("2. loanSettings object:", loanSettings);
+
+    //console.log(
+    //  "3. weeklyRepayment field value:",
+    // document.getElementById("weeklyRepayment")?.value,
+    //);
+
+    saveSetting("loanStartDate", loanSettings.loanStartDate);
+    saveSetting("loanAmount", loanSettings.loanAmount);
+    saveSetting("interestRate", loanSettings.interestRate);
+    saveSetting("loanTermYears", loanSettings.loanTermYears);
+    saveSetting("weeklyRepayment", loanSettings.weeklyRepayment);
+
+    //console.log("4. saved to localStorage");
+
+    const saved = getLoanSettings();
+    //console.log("5. reloaded from localStorage:", saved);
+    //saveData("loanSettings", loanSettings);
+    createForecastRows();
+    updateForecastPage();
+    //createForecastRows();
+
+    // console.log("6. updateForecastPage completed");
+  } catch (error) {
+    // console.error("saveLoanSettings failed:", error);
+  }
+}
+/*
+function saveLoanSettings() {
+  console.log("saveLoanSettings entered");
+  const loanSettings = {
+    loanStartDate: document.getElementById("loanStartDate")?.value || "",
+
+    loanAmount: Number(document.getElementById("loanAmount")?.value || 0),
+
+    interestRate: Number(document.getElementById("interestRate")?.value || 0),
+
+    loanTermYears: Number(document.getElementById("loanTerm")?.value || 0),
+
+    weeklyRepayment: Number(
+      document.getElementById("weeklyRepayment")?.value || 0,
+    ),
+  };
+
+  saveData("loanSettings", loanSettings);
+
+  console.log("LOAN SETTINGS SAVED");
+  console.log(loanSettings);
+
+  updateForecastPage();
+} */
+
+// LOADERS
+function loadLoanSettings() {
+  const settings = getLoanSettings();
+  // console.log("Loaded loan settings:", settings);
+  const loanStartDate = document.getElementById("loanStartDate");
+  const loanAmount = document.getElementById("loanAmount");
+  const interestRate = document.getElementById("interestRate");
+  const loanTerm = document.getElementById("loanTerm");
+  const weeklyRepayment = document.getElementById("weeklyRepayment");
+
+  if (loanStartDate) {
+    loanStartDate.value = settings.loanStartDate || "";
+  }
+
+  if (loanAmount) {
+    loanAmount.value = settings.loanAmount ?? "";
+  }
+
+  if (interestRate) {
+    interestRate.value = settings.interestRate ?? "";
+  }
+
+  if (loanTerm) {
+    loanTerm.value = settings.loanTermYears ?? "";
+  }
+
+  if (weeklyRepayment) {
+    weeklyRepayment.value = settings.weeklyRepayment ?? "";
+  }
+}
+
+function initialiseLoanInputs() {
+  const container = document.getElementById("loan-input-container");
+
+  if (!container) return;
+
+  container.innerHTML = "";
+
+  loanInputs = getLoanInputs();
+
+  if (loanInputs.length === 0) return;
+
+  loanInputs.forEach((loan) => {
+    addLoanInputRow(loan);
+  });
+}
+
+// UI RENDERING
+function addLoanInputRow(data = {}) {
+  const container = document.getElementById("loan-input-container");
+
+  if (!container) return;
+
+  const row = document.createElement("div");
+
+  row.className = "four-card-grid loan-input-row";
+
+  row.innerHTML = `
+    <div class="card">
+      ${data.effectiveDate || data.interestRateDate || ""}
+    </div>
+
+    <div class="card">
+      ${data.interestRate || ""}%
+    </div>
+
+    <div class="card">
+      ${data.weeklyRepayment ? formatCurrency(data.weeklyRepayment) : ""}
+    </div>
+
+    <div class="card">
+      <button
+        type="button"
+        class="delete-loan-row"
+        data-id="${data.id}"
+      >
+        Delete
+      </button>
+    </div>
+  `;
+
+  container.appendChild(row);
+}
+
+function handleLoanRowAdd() {
+  const loanChange = {
+    id: generateId(),
+    effectiveDate: document.getElementById("interestRateDate")?.value || "",
+    interestRate: Number(
+      document.getElementById("interestRateChange")?.value || 0,
+    ),
+    weeklyRepayment: Number(
+      document.getElementById("weeklyRepaymentChange")?.value || 0,
+    ),
+  };
+
+  if (!loanChange.effectiveDate) {
+    return;
+  }
+
+  loanInputs.push(loanChange);
+
+  saveLoanInputsDB(loanInputs);
+
+  addLoanInputRow(loanChange);
+
+  updateForecastPage();
+}
+
+// USER ACTIONS good code
+/*function handleLoanRowAdd() {
+  
+  const loanChange = {
+    id: generateId(),
+
+    effectiveDate: document.getElementById("interestRateDate")?.value || "",
+
+    interestRate: Number(
+      document.getElementById("interestRateChange")?.value || 0,
+    ),
+
+    weeklyRepayment: Number(
+      document.getElementById("weeklyRepaymentChange")?.value || 0,
+    ),
+  };
+
+  if (!loanChange.effectiveDate) {
+    
+    return;
+  }
+  
+  loanInputs.push(loanChange);
+
+  saveData(STORAGE_KEYS.loanInputs, loanInputs);
+
+  addLoanInputRow(loanChange);
+  
+  
+
+  updateForecastPage();
+
+  
+  
+} */
+
+function deleteLoanRow(id) {
+  loanInputs = loanInputs.filter((loan) => String(loan.id) !== String(id));
+
+  saveLoanInputsDB(loanInputs);
+
+  initialiseLoanInputs();
+
+  updateForecastPage();
+}
+
+function initialiseLoanSettingsPage() {
+  //console.log("initialiseLoanSettingsPage fired");
+  const addRowButton = document.getElementById("add-loan-row");
+  //console.log(document.getElementById("add-loan-row"));
+
+  if (addRowButton) {
+    addRowButton.addEventListener("click", handleLoanRowAdd);
+  }
+
+  document.addEventListener("click", (event) => {
+    if (!event.target.classList.contains("delete-loan-row")) {
+      return;
+    }
+
+    deleteLoanRow(event.target.dataset.id);
+  });
+
+  loadLoanSettings();
+
+  // Original Loan listeners
+
+  ["loanStartDate", "loanAmount", "interestRate", "loanTerm"].forEach((id) => {
+    document
+      .getElementById(id)
+      ?.addEventListener("input", updateWeeklyRepayment);
+
+    document.getElementById(id)?.addEventListener("change", saveLoanSettings);
+  });
+
+  // Interest Rate Change listeners
+  ["interestRateChange", "loanAmount", "loanTerm"].forEach((id) => {
+    document
+      .getElementById(id)
+      ?.addEventListener("input", updateChangedRepayment);
+  });
+  // update forecst listeners
+
+  document
+    .getElementById("targetAmount")
+    ?.addEventListener("change", updateForecastPage);
+
+  document
+    .getElementById("targetDate")
+    ?.addEventListener("change", updateForecastPage);
+  initialiseLoanInputs();
+  updateWeeklyRepayment();
+  updateChangedRepayment();
+  initialiseLoanInputs();
+}
+
+/* =====================================================
+   FORECAST HELPERS
+===================================================== */
+
+function isDateInWeek(date, weekStart) {
+  const weekEnd = new Date(weekStart);
+
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  return date >= weekStart && date <= weekEnd;
+}
+
+function getEarningsForWeek(date, earnings) {
+  return earnings.find((e) => {
+    const forecastDate = new Date(date);
+    forecastDate.setHours(0, 0, 0, 0);
+
+    const fromDate = new Date(e.fromDate);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const toDate = new Date(e.toDate);
+    toDate.setHours(23, 59, 59, 999);
+
+    return forecastDate >= fromDate && forecastDate <= toDate;
+  });
+}
+
+function getWeeklyPurchases(weekStart, purchases) {
+  return purchases.reduce((total, purchase) => {
+    if (!purchase.include) return total;
+
+    const purchaseDate = new Date(purchase.date);
+
+    return isDateInWeek(purchaseDate, weekStart)
+      ? total + Number(purchase.amount || 0)
+      : total;
+  }, 0);
+}
+
+function getWeeklyDeposits(weekStart, deposits) {
+  return deposits.reduce((total, deposit) => {
+    const depositDate = new Date(deposit.date);
+
+    /*console.log({
+      weekStart: weekStart.toISOString().split("T")[0],
+      depositDate: deposit.date,
+      amount: deposit.amount,
+      isMatch: isDateInWeek(depositDate, weekStart),
+    }); */
+
+    return isDateInWeek(depositDate, weekStart)
+      ? total + Number(deposit.amount || 0)
+      : total;
+  }, 0);
+}
+
+function getWeeklyFixedCosts(year, fixedCosts) {
+  const costs = fixedCosts.find(
+    (cost) =>
+      year >= Number(cost.startYear) && year <= Number(cost.endYear),
+  );
+
+  return Number(costs?.totalYearlyCost || 0) / 52;
+}
+
+function calculateOffsetBalance(
+  currentOffset,
+  weeklySurplus,
+  deposits,
+  purchases,
+) {
+  return Math.max(0, currentOffset + weeklySurplus + deposits - purchases);
+}
+
+function calculateLoanWeek({ balance, offset, rate, repayment }) {
+  const weeklyRate = rate / 100 / 52;
+
+  const interestBearingBalance = Math.max(0, balance - offset);
+
+  const interest = interestBearingBalance * weeklyRate;
+
+  let principal = repayment - interest;
+
+  principal = Math.max(0, Math.min(principal, balance));
+
+  return {
+    interest,
+    principal,
+    newBalance: balance - principal,
+  };
+}
+//console.log("getLoanInputs:", getLoanInputs());
+//console.table(getLoanInputs());
+function getLoanEventForDate(date) {
+  const forecastDate = new Date(date);
+
+  forecastDate.setHours(0, 0, 0, 0);
+
+  const changes = [...getLoanInputs()].sort(
+    (a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate),
+  );
+
+  let currentChange = null;
+
+  changes.forEach((change) => {
+    const changeDate = new Date(change.effectiveDate);
+
+    changeDate.setHours(0, 0, 0, 0);
+
+    if (changeDate <= forecastDate) {
+      currentChange = change;
+    }
+  });
+  // console.log("Current change:", currentChange);
+  return currentChange;
+}
+
+function getWeeklyRental(currentDate, rentalInputs) {
+  const rental = rentalInputs.find((row) => {
+    const fromDate = new Date(row.fromDate);
+    const toDate = new Date(row.toDate);
+
+    return currentDate >= fromDate && currentDate <= toDate;
+  });
+
+  const weeklyRental = Number(rental?.weeklyRental || 0);
+
+  /*console.log(
+    "Date:",
+    currentDate.toISOString().split("T")[0],
+    "Weekly Rental:",
+    weeklyRental,
+  ); */
+
+  return weeklyRental;
+}
+/*
+function getWeeklyRental(currentDate, rentalInputs = []) {
+  console.log("rentalInputs:", rentalInputs);
+  console.log("type:", typeof rentalInputs);
+
+  const rental = rentalInputs.find((row) => {
+    const fromDate = new Date(row.fromDate);
+    const toDate = new Date(row.toDate);
+
+    return currentDate >= fromDate && currentDate <= toDate;
+  });
+
+  return Number(rental?.weeklyRental || 0);
+}
+console.log(getWeeklyRental); */
+
+/* =====================================================   
+FORECAST ENGINE
+===================================================== */
+
+function runWeeklyForecast() {
+  // console.log("RUN WEEKLY FORECAST START");
+  const settings = getLoanSettings();
+  // console.log("settings", settings);
+  //console.log("loanSettings", getLoanSettings());
+  if (
+    !settings.loanAmount ||
+    !settings.loanTermYears ||
+    !settings.loanStartDate
+  ) {
+    // console.log("EMPTY FORECAST RETURN");
+    return createEmptyForecast();
+  }
+  //console.log("earningsdata", loadData(STORAGE_KEYS.earnings));
+  // console.log("PASSED GUARD");
+  const data = {
+    earnings: loadEarningsDB(),
+
+    purchases: loadPurchasesDB(),
+    deposits: loadData(STORAGE_KEYS.offsetDeposits),
+    fixedCosts: loadFixedCostsDB(),
+    rentals: loadRentalsDB(),
+  };
+
+  //console.log("settings", settings);
+  //console.log("loanStartDate", settings.loanStartDate);
+  const startDate = new Date(settings.loanStartDate);
+  // console.log("startDate", startDate);
+  const endDate = new Date(startDate);
+  endDate.setFullYear(endDate.getFullYear() + settings.loanTermYears);
+  //  console.log("endDate", endDate);
+  const forecastState = {
+    loanBalance: settings.loanAmount,
+    offsetBalance: 0,
+    redrawBalance: 0,
+    loanFullyPaid: false,
+    totalInterest: 0,
+    totalPrincipal: 0,
+    loanPaidOffDate: null,
+    previousRate: null,
+    repayment: 0,
+    weekNumber: 0,
+  };
+
+  const weeklyResults = [];
+
+  for (
+    let currentDate = new Date(startDate);
+    currentDate <= endDate;
+    currentDate.setDate(currentDate.getDate() + 7)
+  ) {
+    //  console.log("LOOP RUNNING");
+    //console.log("currentDate", currentDate);
+    //console.log("settings", settings);
+    //console.log("startDate", startDate);
+    //console.log("endDate", endDate);
+    forecastState.weekNumber++;
+
+    const inputs = getWeeklyInputs(currentDate, data);
+
+    //setTimeout(() => {
+    //  console.log("HERE");
+    //}, 0);
+    // console.log("HERE");
+    //console.log("inputs", inputs);
+    //await Promise.resolve();
+    const rate = getInterestRate(currentDate, inputs.earningsRow);
+
+    //console.log("inputs", inputs);
+
+    forecastState.repayment = calculateRepayment(
+      settings,
+      forecastState,
+      rate,
+      currentDate,
+    );
+
+    const weeklySurplus = calculateWeeklySurplus({
+      ...inputs,
+      repayment: forecastState.repayment,
+      loanBalance: forecastState.loanBalance,
+    });
+
+    forecastState.offsetBalance = updateOffsetBalance({
+      offsetBalance: forecastState.offsetBalance,
+      weeklySurplus,
+      weeklyDeposits: inputs.weeklyDeposits,
+      weeklyPurchases: inputs.weeklyPurchases,
+    });
+
+    const loanResult = processLoanWeek({
+      loanBalance: forecastState.loanBalance,
+      offsetBalance: forecastState.offsetBalance,
+      repayment: forecastState.repayment,
+      rate,
+    });
+
+    forecastState.loanBalance = loanResult.newBalance;
+
+    const redrawAmount = processRedrawBalance(forecastState, settings, rate);
+
+    forecastState.totalInterest += loanResult.interest;
+    forecastState.totalPrincipal += loanResult.principal;
+
+    if (forecastState.loanBalance <= 0 && !forecastState.loanPaidOffDate) {
+      forecastState.loanPaidOffDate = new Date(currentDate);
+    }
+
+    weeklyResults.push(
+      buildWeeklyResult({
+        currentDate,
+        weekNumber: forecastState.weekNumber,
+        rate,
+        repayment: forecastState.repayment,
+        loanBalance: forecastState.loanBalance,
+        offsetBalance: forecastState.offsetBalance,
+        redrawAmount,
+        weeklyRental: inputs.weeklyRental,
+        weeklyPurchases: inputs.weeklyPurchases,
+        loanResult,
+      }),
+    );
+  }
+
+  return buildForecastSummary(forecastState, weeklyResults, settings);
+}
+
+function getWeeklyInputs(currentDate, data) {
+  const earningsRow = getEarningsForWeek(currentDate, data.earnings) || {
+    weeklyWage: 0,
+    weeklySpend: 0,
+  };
+
+  return {
+    earningsRow,
+    weeklyWage: Number(earningsRow.weeklyWage || 0),
+    weeklySpend: Number(earningsRow.weeklySpend || 0),
+
+    weeklyFixedCosts: getWeeklyFixedCosts(
+      currentDate.getFullYear(),
+      data.fixedCosts,
+    ),
+
+    weeklyPurchases: getWeeklyPurchases(currentDate, data.purchases),
+
+    weeklyDeposits: getWeeklyDeposits(currentDate, data.deposits),
+
+    weeklyRental: getWeeklyRental(currentDate, data.rentals),
+  };
+}
+
+function getInterestRate(currentDate, earningsRow) {
+  //console.log("earningsRow", earningsRow);
+  //  console.log("fromDate", earningsRow.fromDate);
+  // console.log("toDate", earningsRow.toDate);
+
+  const baseRate = getInterestRateForEarning(
+    earningsRow.fromDate,
+    earningsRow.toDate,
+  );
+
+  const loanEvent = getLoanEventForDate(currentDate);
+
+  return loanEvent?.interestRate != null
+    ? Number(loanEvent.interestRate)
+    : baseRate;
+}
+
+function calculateRepayment(settings, state, rate, currentDate) {
+  const loanEvent = getLoanEventForDate(currentDate);
+
+  let repayment = state.repayment;
+
+  if (rate !== state.previousRate) {
+    const remainingWeeks = Math.max(
+      1,
+      settings.loanTermYears * 52 - state.weekNumber,
+    );
+
+    repayment = calculateWeeklyLoanRepayment(
+      state.loanBalance,
+      rate,
+      remainingWeeks / 52,
+    );
+
+    state.previousRate = rate;
+  }
+
+  if (loanEvent?.weeklyRepayment && Number(loanEvent.weeklyRepayment) > 0) {
+    repayment = Number(loanEvent.weeklyRepayment);
+  }
+
+  return repayment;
+}
+function calculateWeeklySurplus({
+  weeklyWage,
+  weeklySpend,
+  weeklyFixedCosts,
+  repayment,
+  loanBalance,
+  weeklyRental,
+}) {
+  /* console.log({
+    weeklyWage,
+    weeklySpend,
+    weeklyFixedCosts,
+    repayment,
+    loanBalance,
+    weeklyRental,
+  }); */
+  return (
+    weeklyWage -
+    weeklySpend -
+    weeklyFixedCosts -
+    (loanBalance > 0 ? repayment : 0) +
+    weeklyRental
+  );
+}
+
+function updateOffsetBalance({
+  offsetBalance,
+  weeklySurplus,
+  weeklyDeposits,
+  weeklyPurchases,
+}) {
+  return calculateOffsetBalance(
+    offsetBalance,
+    weeklySurplus,
+    weeklyDeposits,
+    weeklyPurchases,
+  );
+}
+function processLoanWeek({ loanBalance, offsetBalance, repayment, rate }) {
+  if (loanBalance <= 0) {
+    return {
+      interest: 0,
+      principal: 0,
+      newBalance: 0,
+    };
+  }
+
+  return calculateLoanWeek({
+    balance: loanBalance,
+    offset: offsetBalance,
+    rate,
+    repayment,
+  });
+}
+
+function processRedrawBalance(state, settings, rate) {
+  if (!state.loanFullyPaid && state.loanBalance === 0) {
+    state.loanFullyPaid = true;
+
+    state.redrawBalance = calculateRedraw(
+      settings.loanAmount,
+      rate,
+      settings.loanTermYears,
+      state.weekNumber,
+      state.loanBalance,
+    );
+  }
+
+  if (state.loanFullyPaid) {
+    state.redrawBalance = Math.max(0, state.redrawBalance - state.repayment);
+  }
+
+  return state.loanFullyPaid
+    ? state.redrawBalance
+    : calculateRedraw(
+        settings.loanAmount,
+        rate,
+        settings.loanTermYears,
+        state.weekNumber,
+        state.loanBalance,
+      );
+}
+
+function buildWeeklyResult({
+  currentDate,
+  weekNumber,
+  rate,
+  repayment,
+  loanBalance,
+  offsetBalance,
+  redrawAmount,
+  weeklyRental,
+  weeklyPurchases,
+  loanResult,
+}) {
+  const interestBearingBalance = Math.max(0, loanBalance - offsetBalance);
+
+  return {
+    weekNumber,
+    weekDate: new Date(currentDate),
+    weeklyRental,
+    rate,
+    purchases: weeklyPurchases,
+    offsetBalance,
+    redrawAmount,
+    interest: loanResult.interest,
+    principal: loanResult.principal,
+    repayment,
+    loanBalance,
+    interestBearingBalance,
+    gap: offsetBalance - loanBalance,
+  };
+}
+
+function buildForecastSummary(state, weeklyResults, settings) {
+  return {
+    weeklyResults,
+    totalInterest: state.totalInterest,
+    totalPrincipal: state.totalPrincipal,
+    totalWeeks: settings.loanTermYears * 52,
+    finalOffsetBalance: state.offsetBalance,
+    remainingLoanBalance: state.loanBalance,
+    loanPaidOffDate: state.loanPaidOffDate,
+  };
+}
+
+function createEmptyForecast() {
+  return {
+    weeklyResults: [],
+    totalInterest: 0,
+    totalPrincipal: 0,
+    totalWeeks: 0,
+    finalOffsetBalance: 0,
+    remainingLoanBalance: 0,
+    loanPaidOffDate: null,
+  };
+}
+/* =====================================================
+   OFFSET MILESTONES
+===================================================== */
+
+function getOffsetMilestone(weeklyResults, totalInterest, loanTermYears) {
+  const totalWeeks = loanTermYears * 52;
+  const rows = [...weeklyResults];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    if (rows[i].gap < 0) {
+      const milestone = rows[i + 1];
+
+      if (!milestone) {
+        return null;
+      }
+
+      return {
+        week: milestone.weekNumber,
+        date: milestone.weekDate.toISOString().split("T")[0],
+        totalInterest: totalInterest.toFixed(2),
+        offsetBalance: milestone.offsetBalance,
+        loanBalance: milestone.loanBalance,
+        timeSaved: ((totalWeeks - milestone.weekNumber) / 52).toFixed(1),
+        totalWeeks,
+      };
+    }
+  }
+
+  return null;
+}
+
+function getTargetAmountMilestone(weeklyResults, targetAmount) {
+  if (!targetAmount || targetAmount <= 0) {
+    return null;
+  }
+
+  const milestone = weeklyResults.find(
+    (row) => row.offsetBalance >= targetAmount,
+  );
+
+  if (!milestone) {
+    return null;
+  }
+
+  return {
+    date: milestone.weekDate.toISOString().split("T")[0],
+    offsetBalance: milestone.offsetBalance,
+  };
+}
+
+function getTargetDateMilestone(weeklyResults, targetDate) {
+  if (!targetDate) {
+    return null;
+  }
+
+  const milestone = weeklyResults.find(
+    (row) => row.weekDate.toISOString().split("T")[0] >= targetDate,
+  );
+
+  if (!milestone) {
+    return null;
+  }
+
+  return {
+    date: milestone.weekDate.toISOString().split("T")[0],
+    offsetBalance: milestone.offsetBalance,
+  };
+}
+
+/* =====================================================
+   FORECAST REPORTING
+===================================================== */
+function populateForecastTable(weeklyResults) {
+  const tbody = document.getElementById("forecastTableBody");
+
+  if (!tbody) {
+    console.error("forecastTableBody not found");
+    return;
+  }
+
+  tbody.innerHTML = "";
+
+  weeklyResults.forEach((row) => {
+    const tr = document.createElement("tr");
+
+    const gapClass = Number(row.gap) >= 0 ? "positive-gap" : "negative-gap";
+
+    const weekDate = new Date(row.weekDate).toISOString().split("T")[0];
+
+    tr.innerHTML = `
+      <td>${row.weekNumber ?? ""}</td>
+      <td>${weekDate}</td>
+      <td>${Number(row.rate || 0).toFixed(2)}%</td>
+      <td>${formatCurrency(row.weeklyRental || 0)}</td>
+      <td>${formatCurrency(row.purchases || 0)}</td>
+      <td>${formatCurrency(row.interest || 0)}</td>
+      <td>${formatCurrency(row.principal || 0)}</td>
+      <td>${formatCurrency(row.repayment || 0)}</td>
+      <td>${formatCurrency(row.loanBalance || 0)}</td>
+      <td>${formatCurrency(row.offsetBalance || 0)}</td>
+      <td>${formatCurrency(row.interestBearingBalance || 0)}</td>
+      <td class="${gapClass}">
+        ${formatCurrency(row.gap || 0)}
+      </td>
+      <td>${formatCurrency(row.redrawAmount || 0)}</td>
+    `;
+
+    if (Number(row.loanBalance) <= 0) {
+      tr.classList.add("loan-paid");
+    }
+
+    tbody.appendChild(tr);
+  });
+}
+
+function summariseQuarterly(weeklyResults) {
+  const quarterly = {};
+
+  weeklyResults.forEach((w) => {
+    const key = getQuarterKey(w.weekDate);
+
+    if (!quarterly[key]) {
+      quarterly[key] = {
+        loan: 0,
+        offset: 0,
+        redraw: 0,
+        spend: 0,
+        gap: 0,
+      };
+    }
+
+    quarterly[key].loan = w.loanBalance;
+    quarterly[key].offset = w.offsetBalance;
+    quarterly[key].redraw = w.redrawAmount;
+    quarterly[key].spend += w.purchases || 0;
+    quarterly[key].gap = w.offsetBalance - w.loanBalance;
+  });
+
+  return quarterly;
+}
+
+function populateInterestCostTable(weeklyResults) {
+  const yearlyInterest = {};
+
+  weeklyResults.forEach((week) => {
+    const year = week.weekDate.getFullYear();
+
+    if (!yearlyInterest[year]) {
+      yearlyInterest[year] = 0;
+    }
+
+    yearlyInterest[year] += week.interest;
+  });
+
+  const years = Object.keys(yearlyInterest).sort().slice(0, 6);
+
+  years.forEach((year, index) => {
+    const input = document.getElementById(`interestYear${index + 1}`);
+
+    if (input) {
+      input.value = formatCurrency(yearlyInterest[year]);
+    }
+  });
+}
+
+function populateOffsetBalanceTable(weeklyResults) {
+  const yearlyOffsets = {};
+
+  weeklyResults.forEach((week) => {
+    const year = week.weekDate.getFullYear();
+
+    // Keep the latest offset balance seen for the year
+    yearlyOffsets[year] = week.offsetBalance;
+  });
+
+  const years = Object.keys(yearlyOffsets).sort().slice(0, 6);
+
+  years.forEach((year, index) => {
+    const input = document.getElementById(`offsetYear${index + 1}`);
+
+    if (input) {
+      // input.value = formatCurrency(yearlyOffsets[year]);
+      input.value = formatCurrency(Math.round(yearlyOffsets[year]));
+    }
+  });
+}
+
+/* =====================================================
+  FORECASTS UI
+===================================================== */
+function updateForecastPage() {
+  // console.log("UPDATE FORECAST FIRED");
+
+  const forecast = runWeeklyForecast();
+
+  const offsetMilestone = getOffsetMilestone(
+    forecast.weeklyResults,
+    forecast.totalInterest,
+    getLoanSettings().loanTermYears,
+  );
+
+  const settings = getLoanSettings();
+
+  const totalInterest = calculateLoanCostSummary(
+    settings.loanAmount,
+    settings.interestRate,
+    settings.loanTermYears,
+  ).totalInterest;
+
+  // console.log("Total Interest:", totalInterest);
+  //console.log("LOAN SETTINGS");
+  // console.log(settings);
+  //console.log(settings.weeklyRepayment);
+
+  // console.log("OFFSET MILESTONE", offsetMilestone);
+
+  const targetAmountMilestone = getTargetAmountMilestone(
+    forecast.weeklyResults,
+    Number(document.getElementById("targetAmount")?.value || 0),
+  );
+
+  const targetDateMilestone = getTargetDateMilestone(
+    forecast.weeklyResults,
+    document.getElementById("targetDate")?.value || "",
+  );
+
+  /*
+  console.log("date", offsetMilestone.date);
+  console.log("timeSaved", offsetMilestone.timeSaved);
+  console.log("offsetBalance", offsetMilestone.offsetBalance);
+  console.log("loanBalance", offsetMilestone.loanBalance);
+  console.log("totalInterest", offsetMilestone.totalInterest);
+
+  console.log("offsetMilestone", offsetMilestone);
+*/
+  function updateForecastPage() {
+    const forecast = runWeeklyForecast();
+    console.log("TARGET AMOUNT MILESTONE");
+    console.log(targetAmountMilestone);
+
+    // console.log("targetAmountMilestone", forecast.targetAmountMilestone);
+    localStorage.setItem(
+      "forecastResults",
+      JSON.stringify(forecast.weeklyResults),
+    );
+
+    // existing code
+    populateInterestCostTable(forecast.weeklyResults);
+    populateOffsetBalanceTable(forecast.weeklyResults);
+  }
+
+  const weeklyResults = forecast.weeklyResults;
+  const originalTotalInterest = calculateLoanCostSummary(
+    getLoanSettings().loanAmount,
+    getLoanSettings().interestRate,
+    getLoanSettings().loanTermYears,
+  ).totalInterest;
+
+  const totalInterestSaved = formatCurrency(
+    Math.round(originalTotalInterest - forecast.totalInterest),
+  );
+  const interestSavedField = document.getElementById("interestSaved");
+
+  if (interestSavedField) {
+    interestSavedField.value = totalInterestSaved;
+  }
+
+  //console.log(totalInterestSaved);
+  // Update offset milestone fields
+  if (offsetMilestone) {
+    const offsetDateField = document.getElementById("offsetDate");
+    const offsetBalanceField = document.getElementById("offsetBalanceEqual");
+    const offsetTotalCostField = document.getElementById("totalInterestCost");
+    const offsetTimeSavedField = document.getElementById("timeSaved");
+    if (offsetDateField) {
+      offsetDateField.value = offsetMilestone.date;
+    }
+
+    if (offsetBalanceField) {
+      offsetBalanceField.value = formatCurrency(
+        Math.round(offsetMilestone.offsetBalance),
+      );
+    }
+    if (offsetTotalCostField) {
+      offsetTotalCostField.value = formatCurrency(
+        Math.round(offsetMilestone.totalInterest),
+      );
+    }
+    if (offsetTimeSavedField) {
+      offsetTimeSavedField.value = offsetMilestone.timeSaved;
+    }
+  }
+
+  if (targetDateMilestone) {
+    document.getElementById("targetDateResult").value = formatCurrency(
+      Math.round(targetDateMilestone.offsetBalance),
+    );
+  }
+
+  if (targetAmountMilestone) {
+    document.getElementById("targetAmountResult").value =
+      targetAmountMilestone.date;
+  }
+  populateInterestCostTable(weeklyResults);
+  populateOffsetBalanceTable(weeklyResults);
+
+  const quarterly = summariseQuarterly(weeklyResults);
+
+  Object.keys(quarterly).forEach((key) => {
+    const loanCard = document.getElementById(`loan-${key}`);
+    const offsetCard = document.getElementById(`offset-${key}`);
+    const spendCard = document.getElementById(`spend-${key}`);
+    const redrawCard = document.getElementById(`redraw-${key}`);
+    const gapCard = document.getElementById(`gap-${key}`);
+
+    if (redrawCard) {
+      redrawCard.textContent = formatCurrency(quarterly[key].redraw);
+    }
+
+    if (loanCard) {
+      loanCard.textContent = formatCurrency(quarterly[key].loan);
+    }
+
+    if (offsetCard) {
+      offsetCard.textContent = formatCurrency(quarterly[key].offset);
+    }
+
+    if (spendCard) {
+      spendCard.textContent = formatCurrency(quarterly[key].spend || 0);
+    }
+
+    if (gapCard) {
+      gapCard.textContent = formatCurrency(quarterly[key].gap);
+    }
+  });
+}
+
+function openForecastReport() {
+  const forecast = runWeeklyForecast();
+
+  localStorage.setItem(
+    "forecastResults",
+    JSON.stringify(forecast.weeklyResults),
+  );
+
+  window.open("ExcelStyleWeekly.html", "_blank");
+}
+
+/* =====================================================
+   UI
+===================================================== */
+function showPage(pageId) {
+  document
+    .querySelectorAll(".app-page")
+    .forEach((page) => page.classList.remove("active"));
+
+  document
+    .querySelectorAll("header button")
+    .forEach((btn) => btn.classList.remove("active"));
+
+  document.getElementById(pageId).classList.add("active");
+
+  const pageButtonMap = {
+    "page-forecast": 0,
+    "page-earnings": 1,
+    "page-loan-settings": 2,
+    "page-purchases": 3,
+  };
+
+  const buttons = document.querySelectorAll("header .nav-btn");
+  buttons[pageButtonMap[pageId]]?.classList.add("active");
+}
+
+function highlightActivePage() {
+  const currentPage = location.pathname.split("/").pop();
+
+  document.querySelectorAll("nav a").forEach((link) => {
+    if (link.getAttribute("href") === currentPage) {
+      link.classList.add("active");
+    }
+  });
+}
+
+/* =====================================================
+   STARTUP
+===================================================== */
+
+function initialiseApp() {
+  // console.log("BEFORE createForecastRows");
+  // console.log("INITIALISE APP FIRED");
+  if (!document.getElementById("page-forecast")) {
+    return;
+  }
+
+  highlightActivePage();
+
+  const purchases = loadPurchasesDB();
+  initialiseEarningsPage();
+  initialiseFixedCostPage();
+  initialiseOffsetPage();
+  initialiseRentals();
+  initialiseLoanSettingsPage();
+
+  createForecastRows();
+  updateForecastPage();
+  showPage("page-forecast");
+  // setTimeout(() => {
+  // updateForecastPage();
+  // }, 0);
+
+  // console.log("AFTER createForecastRows");
+  //console.log("BEFORE updateForecastPage");
+  //updateForecastPage();
+  //console.log("AFTER updateForecastPage");
+}
+
+document.addEventListener("DOMContentLoaded", initialiseApp);
+
+/*
+
+localStorage.removeItem("loanPlannerPurchases");
+localStorage.removeItem("loanPlannerEarnings");
+localStorage.removeItem("loanPlannerFixedCosts");
+localStorage.removeItem("loanPlannerOffsetDeposits");
+localStorage.removeItem("loanPlannerLoanInputs");
+localStorage.removeItem("loanSettings"); 
+localStorage.removeItem("loanSettings"); 
+localStorage.clear();
+location.reload();
+
+*/
+
+/*  console.log(
+      `Week ${weekNumber} (${currentDate.toISOString().split("T")[0]})`,
+      "Weekly Interest:",
+      loanResult.interest.toFixed(2),
+      "Total Interest:",
+      totalInterest.toFixed(2),
+    );*/
+/*console.log("CHECK MILESTONE", {
+      week: weekNumber,
+      interestBearingBalance,
+      offsetBalance,
+      loanBalance,
+      offsetMilestone,
+    }); */
+// if (loanResult.interest <= 0 && interestStopTotal === null) { && offsetMilestone === null)
+/*
+    if (offsetBalance >= loanBalance && loanBalance > 0) {
+      console.log(
+        currentDate.toISOString().split("T")[0],
+        "offset:",
+        offsetBalance,
+        "loan:",
+        loanBalance,
+      );
+
+      offsetMilestone = {
+        week: weekNumber,
+        date: currentDate.toISOString().split("T")[0],
+        totalInterest: totalInterest.toFixed(2),
+        offsetBalance,
+        loanBalance,
+        timeSaved: ((totalWeeks - weekNumber) / 52).toFixed(1),
+      };
+    } */
+//console.log("OFFSET MILESTONE", offsetMilestone);
+/* old code
+    if (interestBearingBalance <= 0) {
+      //console.log("MILESTONE HIT");
+      interestStopTotal = totalInterest;
+
+      offsetMilestone = {
+        week: weekNumber,
+        date: currentDate.toISOString().split("T")[0],
+        totalInterest: totalInterest.toFixed(2),
+        offsetBalance: offsetBalance,
+        loanBalance: loanBalance,
+        timeSaved: ((totalWeeks - weekNumber) / 52).toFixed(1),
+      };
+      
+
+      console.log(
+        "Offset fully covers loan",
+        "Week:",
+        weekNumber,
+        "Date:",
+        currentDate.toISOString().split("T")[0],
+        "Total Interest Paid:",
+        totalInterest.toFixed(2),
+        "Offset Balance:",
+        offsetBalance,
+        "Loan Balance:",
+        loanBalance,
+      );
+    } */

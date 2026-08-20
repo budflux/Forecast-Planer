@@ -1,0 +1,5 @@
+{
+  "scripts": {
+    "check": "node --check ORIGINAL_P/planner.js && test -f ORIGINAL_P/planner.html && test -f ORIGINAL_P/planner.css"
+  }
+}
