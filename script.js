@@ -9,6 +9,9 @@ const dateOnly = value => {
   return year && month && day ? new Date(year, month - 1, day) : new Date(NaN);
 };
 const validDate = value => value && !Number.isNaN(dateOnly(value).getTime());
+const inputDate = value => { const date = dateOnly(value); return validDate(value) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''; };
+const mondayOf = value => { const date = dateOnly(value); if (!validDate(value)) return ''; date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return inputDate(date); };
+const sundayOf = value => { const monday = dateOnly(value); if (!validDate(value)) return ''; monday.setDate(monday.getDate() + 6); return inputDate(monday); };
 const inRange = (date, from, to) => validDate(from) && validDate(to) && dateOnly(date) >= dateOnly(from) && dateOnly(date) <= dateOnly(to);
 const isDateInWeek = (value, weekStart) => inRange(value, weekStart, new Date(dateOnly(weekStart).getTime() + 6 * 86400000));
 
@@ -16,8 +19,8 @@ class DataRepository {
   constructor(client, user) { this.client = client; this.user = user; this.cache = {}; this.settings = {}; }
   async init() {
     const tables = ['earnings', 'rentals', 'purchases', 'deposits', 'fixed_costs', 'loan_inputs'];
-    const results = await Promise.all(tables.map(table => this.client.from(table).select('*')));
-    results.forEach((result, index) => { if (result.error) throw result.error; this.cache[tables[index]] = result.data || []; });
+    const results = await Promise.all([...tables, 'actual_weekly_spend'].map(table => this.client.from(table).select('*')));
+    results.forEach((result, index) => { if (result.error) throw result.error; this.cache[[...tables, 'actual_weekly_spend'][index]] = result.data || []; });
     const settings = await this.client.from('settings').select('key,value');
     if (settings.error) throw settings.error;
     this.settings = Object.fromEntries((settings.data || []).map(row => [row.key, row.value]));
@@ -30,6 +33,12 @@ class DataRepository {
     this.settings[key] = row.value;
   }
   collection(table, order = 'id') { return [...(this.cache[table] || [])].sort((a, b) => String(a[order] || '').localeCompare(String(b[order] || ''))); }
+  async saveActualWeeklySpend(weekStart, weekEnd, amount) {
+    const row = { user_id: this.user.id, weekStart, weekEnd, amount: Number(amount) };
+    const { data, error } = await this.client.from('actual_weekly_spend').upsert(row, { onConflict: 'user_id,weekStart' }).select().single();
+    if (error) throw error;
+    this.cache.actual_weekly_spend = [...(this.cache.actual_weekly_spend || []).filter(item => item.weekStart !== weekStart), data];
+  }
   async saveCollection(table, fields, records) {
     const dateFields = new Set(['fromDate', 'toDate', 'date', 'depositDate', 'effectiveDate']);
     const rows = records.map(record => ({ ...Object.fromEntries(fields.map(field => [field, dateFields.has(field) && record[field] === '' ? null : record[field]])), user_id: this.user.id }));
@@ -46,6 +55,7 @@ class DataRepository {
       purchases: this.collection('purchases', 'date'),
       deposits: this.collection('deposits', 'depositDate').map(row => ({ ...row, depositDate: row.depositDate || row.date })),
       fixedCosts: this.collection('fixed_costs', 'startYear'), loanInputs: this.collection('loan_inputs', 'effectiveDate'),
+      actualWeeklySpend: this.collection('actual_weekly_spend', 'weekStart'),
     };
   }
 }
@@ -73,7 +83,8 @@ function runForecast(settings, data) {
     console.warn('[forecast skipped] incomplete loan settings');
     return { weeklyResults: [], totalInterest: 0 };
   }
-  const results = [], start = dateOnly(settings.loanStartDate), weeks = Number(settings.loanTerm) * 52;
+  const results = [], start = dateOnly(mondayOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
+  const actualByWeek = Object.fromEntries(data.actualWeeklySpend.map(row => [row.weekStart, Number(row.amount)]));
   const initialOffset = data.deposits.filter(row => validDate(row.depositDate || row.date) && dateOnly(row.depositDate || row.date) < start).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   let balance = Number(settings.loanAmount), offset = initialOffset, repayment = weeklyRepayment(balance, settings.interestRate, settings.loanTerm), previousRate, loanFullyPaid = false, redrawBalance = 0;
   if (initialOffset) console.log('[initial offset]', { amount: initialOffset, loanStartDate: settings.loanStartDate });
@@ -85,7 +96,8 @@ function runForecast(settings, data) {
     const earning = data.earnings.find(row => inRange(current, row.fromDate, row.toDate)) || {};
     const rental = data.rentals.find(row => inRange(current, row.fromDate, row.toDate));
     const fixed = data.fixedCosts.find(row => Number(row.startYear) <= current.getFullYear() && Number(row.endYear) >= current.getFullYear());
-    const purchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const forecastPurchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const weekStart = inputDate(current), actualSpend = actualByWeek[weekStart], purchases = actualSpend == null ? forecastPurchases : actualSpend;
     const matchingDeposits = data.deposits.filter(row => isDateInWeek(row.depositDate || row.date, current));
     const deposits = matchingDeposits.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const weeklyFixed = Number(fixed?.totalYearlyCost || 0) / 52;
@@ -102,7 +114,7 @@ function runForecast(settings, data) {
     }
     if (loanFullyPaid) redrawBalance = Math.max(0, redrawBalance - repayment);
     const redrawAmount = loanFullyPaid ? redrawBalance : calculateRedraw(settings.loanAmount, rate, settings.loanTerm, week + 1, balance);
-    results.push({ weekNumber: week + 1, weekDate: current, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
+    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, forecastPurchases, actualSpend: actualSpend == null ? null : purchases, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
   }
   return { weeklyResults: results, totalInterest: results.reduce((sum, row) => sum + row.interest, 0) };
 }
@@ -116,7 +128,7 @@ class CostProjectorApp {
     if (!session) return this.showAuth();
     this.repo = new DataRepository(supabaseClient, session.user);
     await this.repo.init();
-    this.load(); this.bindEvents(); this.render(); this.showPage('page-forecast');
+    this.load(); this.bindEvents(); this.render(); this.renderActualSpendControls(); this.showPage('page-forecast');
   }
   showAuth() {
     document.body.classList.add('signed-out');
@@ -139,6 +151,7 @@ class CostProjectorApp {
       if (action === 'update') this.refresh();
       if (action === 'report') this.openForecastReport();
       if (action === 'sign-out') supabaseClient.auth.signOut();
+      if (action === 'save-actual-spend') this.saveActualSpend();
       if (action === 'add-earning') this.add('earnings', { fromDate: '', toDate: '', weeklyWage: 0, weeklySpend: 0 });
       if (action === 'add-fixed') this.add('fixedCosts', { startYear: 0, endYear: 0, totalYearlyCost: 0 });
       if (action === 'add-deposit') this.add('deposits', { depositDate: '', description: '', amount: 0 });
@@ -149,12 +162,31 @@ class CostProjectorApp {
       if (action === 'add-rate') this.addRate();
       if (event.target.closest('[data-delete]')) this.remove(event.target.closest('[data-delete]').dataset.delete, event.target.closest('[data-delete]').dataset.id);
     });
-    document.addEventListener('input', event => { if (event.target.matches('#loanStartDate,#loanTerm,#loanAmount,#interestRate')) this.saveSettings(); const table = event.target.closest('[data-table]')?.dataset.table; if (table) { const row = event.target.closest('[data-row]'); this.readRow(row); this.save(); if (table === 'deposits' && event.target.name === 'amount') console.log('[deposit input]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); } if (event.target.matches('#targetDate,#targetAmount')) this.refresh(); if (event.target.matches('#changeRate')) this.updateChangeRepayment(); this.refresh(false); this.renderSettings(); this.renderForecast(); });
+    document.addEventListener('input', event => { if (event.target.matches('#actualWeekStart')) this.renderActualSpendControls(); if (event.target.matches('#loanStartDate,#loanTerm,#loanAmount,#interestRate')) this.saveSettings(); const table = event.target.closest('[data-table]')?.dataset.table; if (table) { const row = event.target.closest('[data-row]'); this.readRow(row); this.save(); if (table === 'deposits' && event.target.name === 'amount') console.log('[deposit input]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); } if (event.target.matches('#targetDate,#targetAmount')) this.refresh(); if (event.target.matches('#changeRate')) this.updateChangeRepayment(); this.refresh(false); this.renderSettings(); this.renderForecast(); });
     document.addEventListener('keydown', event => { if (event.key !== 'Enter' || event.target.name !== 'amount' || !event.target.closest('[data-table="deposits"]')) return; const row = event.target.closest('[data-row]'); console.log('[deposit Enter]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); });
   }
   add(table, record) { record.id = id(); this.data[table].push(record); this.save(); this.render(); }
   addRate() { const date = document.getElementById('changeDate').value, rate = Number(document.getElementById('changeRate').value || 0); if (!date) return; this.data.loanInputs.push({ id: id(), effectiveDate: date, interestRate: rate, weeklyRepayment: Number(document.getElementById('changeRepayment').value || 0) }); this.save(); this.render(); }
   remove(table, recordId) { this.data[table] = this.data[table].filter(row => String(row.id) !== String(recordId)); this.save(); this.render(); }
+  renderActualSpendControls() {
+    const startInput = document.getElementById('actualWeekStart'), endInput = document.getElementById('actualWeekEnd'), amountInput = document.getElementById('actualWeeklySpend'), saveButton = document.querySelector('[data-action="save-actual-spend"]'), message = document.getElementById('actual-spend-message');
+    if (!startInput) return;
+    startInput.value = mondayOf(startInput.value || new Date());
+    endInput.value = sundayOf(startInput.value);
+    const actual = this.data.actualWeeklySpend.find(row => row.weekStart === startInput.value);
+    amountInput.value = actual?.amount ?? '';
+    const complete = dateOnly(endInput.value) < dateOnly(new Date());
+    amountInput.disabled = !complete;
+    saveButton.disabled = !complete;
+    message.textContent = complete ? '' : 'Actual spend is available after this week ends.';
+  }
+  async saveActualSpend() {
+    const start = document.getElementById('actualWeekStart').value, end = sundayOf(start), amount = Number(document.getElementById('actualWeeklySpend').value), message = document.getElementById('actual-spend-message');
+    if (start !== mondayOf(start)) { message.textContent = 'Week start must be a Monday.'; return; }
+    if (dateOnly(end) >= dateOnly(new Date())) { message.textContent = 'Only completed weeks can be saved.'; return; }
+    if (!Number.isFinite(amount) || amount < 0) { message.textContent = 'Enter a valid spend amount.'; return; }
+    try { await this.repo.saveActualWeeklySpend(start, end, amount); this.data = this.repo.getData(); this.refresh(); this.renderActualSpendControls(); message.textContent = 'Actual spend saved.'; } catch (error) { console.error(error); message.textContent = 'Actual spend could not be saved.'; }
+  }
   saveSettings() { this.settings = { loanStartDate: document.getElementById('loanStartDate').value, loanTerm: Number(document.getElementById('loanTerm').value || 0), loanAmount: Number(document.getElementById('loanAmount').value || 0), interestRate: Number(document.getElementById('interestRate').value || 0) }; Object.entries(this.settings).forEach(([key, value]) => this.repo.setSetting(key, value).catch(error => console.error('Could not save setting', error))); }
   readRow(row) { const table = row.closest('[data-table]').dataset.table, record = this.data[table].find(item => String(item.id) === row.dataset.id); if (!record) return; row.querySelectorAll('[name]').forEach(input => { record[input.name] = input.type === 'checkbox' ? (input.checked ? 1 : 0) : input.type === 'number' ? Number(input.value || 0) : input.value; }); }
   async save() { const specs = { earnings: ['id','fromDate','toDate','weeklyWage','weeklySpend'], rentals: ['id','fromDate','toDate','weeklyRental'], purchases: ['id','date','description','amount','includeFlag'], deposits: ['id','depositDate','description','amount'], fixedCosts: ['id','startYear','endYear','totalYearlyCost'], loanInputs: ['id','effectiveDate','interestRate','weeklyRepayment'] }; try { await Promise.all(Object.entries(specs).map(([table, fields]) => this.repo.saveCollection(table === 'fixedCosts' ? 'fixed_costs' : table === 'loanInputs' ? 'loan_inputs' : table, fields, this.data[table]))); } catch (error) { console.error('Could not save planner data', error); } }

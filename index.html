@@ -78,7 +78,7 @@
     </section>
 
     <section id="page-purchases" class="app-page">
-      <div class="sheet-header"><h2>Purchase Planner <input id="purchase-total" type="text" value="$0" readonly aria-label="Included purchase total"></h2><button data-action="add-purchase">+ Add Purchase</button></div>
+      <div class="sheet-header"><div><h2>Purchase Planner <input id="purchase-total" type="text" value="$0" readonly aria-label="Included purchase total"></h2><div class="actual-spend-controls"><label for="actualWeekStart">Week start</label><input id="actualWeekStart" type="date"><label for="actualWeekEnd">Week end</label><input id="actualWeekEnd" type="date" readonly><label for="actualWeeklySpend">Actual weekly spend</label><input id="actualWeeklySpend" type="number" min="0" step="0.01"><button type="button" data-action="save-actual-spend">Save actual spend</button><p id="actual-spend-message" role="status"></p></div></div><button data-action="add-purchase">+ Add Purchase</button></div>
       <div class="purchase-wrapper"><div class="purchase-grid purchase-header"><div class="card header">Purchase Date</div><div class="card header">Description</div><div class="card header">Value</div><div class="card header">Include</div></div><div id="purchase-container"></div></div>
     </section>
 

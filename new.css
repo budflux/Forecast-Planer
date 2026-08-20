@@ -395,9 +395,32 @@ input[type="text"][readonly] {
   font-size: 1rem;
 }
 
+.actual-spend-controls {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+#actual-spend-message {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
 .purchase-wrapper {
   height: calc(100vh - 120px);
   overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+  .actual-spend-controls {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+    align-items: end;
+  }
+
+  .actual-spend-controls p {
+    grid-column: 1 / -1;
+  }
 }
 
 /*

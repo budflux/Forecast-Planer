@@ -10,6 +10,8 @@ thead { position: sticky; top: 0; z-index: 2; }
 th, td { padding: .55rem .7rem; border: 1px solid #d8dde4; text-align: right; }
 th { position: sticky; top: 0; z-index: 3; background: #1f4e79; color: white; text-align: center; }
 th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+.spend-over { color: #b42318; font-weight: 700; }
+.spend-under { color: #16803c; font-weight: 700; }
 .loan-paid { background: #e5f5e8; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 @media (max-width: 600px) { .report-header { align-items: flex-start; flex-direction: column; } }
