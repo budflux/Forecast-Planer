@@ -395,29 +395,40 @@ input[type="text"][readonly] {
   font-size: 1rem;
 }
 
+#page-purchases {
+  padding: 0.5rem;
+}
+
 .purchase-toolbar {
   gap: 0.75rem;
+  margin-top: 0;
   overflow-x: auto;
 }
 
 .purchase-toolbar h2 {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 0.75rem;
-  min-width: max-content;
+  gap: 0.4rem;
+  font-size: 1.15rem;
   white-space: nowrap;
+}
+
+#purchase-total {
+  width: 6rem;
+  min-height: 36px;
 }
 
 .actual-spend-controls {
   display: grid;
-  grid-template-columns: max-content 8rem max-content 8rem max-content 8rem max-content;
-  align-items: center;
-  gap: 0.35rem;
-  min-width: max-content;
+  flex: 1 0 35rem;
+  grid-template-columns: repeat(3, minmax(8rem, 1fr)) max-content;
+  align-items: end;
+  gap: 0.5rem;
 }
 
 .actual-spend-controls label {
-  margin: 0;
+  margin-bottom: 0.2rem;
   white-space: nowrap;
 }
 
