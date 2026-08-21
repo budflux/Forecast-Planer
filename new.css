@@ -427,8 +427,14 @@ input[type="text"][readonly] {
   gap: 0.75rem;
 }
 
+.actual-spend-controls > * {
+  margin: 0.25rem;
+}
+
 .actual-spend-controls > div {
-  padding: 0.35rem;
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.5rem;
 }
 
 .actual-spend-controls > button {
