@@ -166,12 +166,12 @@ function runForecast(settings, data) {
     const earning = data.earnings.find(row => inRange(current, row.fromDate, row.toDate)) || {};
     const rental = data.rentals.find(row => inRange(current, row.fromDate, row.toDate));
     const fixed = data.fixedCosts.find(row => Number(row.startYear) <= current.getFullYear() && Number(row.endYear) >= current.getFullYear());
-    const forecastPurchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const weekStart = inputDate(current), actualSpend = weekStart < currentWeekStart ? actualByWeek[weekStart] : undefined, purchases = actualSpend == null ? forecastPurchases : actualSpend;
+    const purchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const weekStart = inputDate(current), forecastSpend = Number(earning.weeklySpend || 0), actualSpend = weekStart < currentWeekStart ? actualByWeek[weekStart] : undefined, weeklySpend = actualSpend ?? forecastSpend;
     const matchingDeposits = data.deposits.filter(row => isDateInWeek(row.depositDate || row.date, current));
     const deposits = matchingDeposits.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const weeklyFixed = Number(fixed?.totalYearlyCost || 0) / 52;
-    const surplus = Number(earning.weeklyWage || 0) - Number(earning.weeklySpend || 0) - weeklyFixed + Number(rental?.weeklyRental || 0) - (balance > 0 ? repayment : 0);
+    const surplus = Number(earning.weeklyWage || 0) - weeklySpend - weeklyFixed + Number(rental?.weeklyRental || 0) - (balance > 0 ? repayment : 0);
     offset = Math.max(0, offset + surplus + deposits - purchases);
     if (deposits) console.log('[deposit forecast]', { depositDate: matchingDeposits[0].depositDate || matchingDeposits[0].date, weekDate: current.toISOString().slice(0, 10), deposits, offset });
     const interest = Math.max(0, balance - offset) * rate / 100 / 52;
@@ -184,7 +184,7 @@ function runForecast(settings, data) {
     }
     if (loanFullyPaid) redrawBalance = Math.max(0, redrawBalance - repayment);
     const redrawAmount = loanFullyPaid ? redrawBalance : calculateRedraw(settings.loanAmount, rate, settings.loanTerm, week + 1, balance);
-    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, forecastPurchases, actualSpend: actualSpend == null ? null : purchases, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
+    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklySpend, forecastSpend, actualSpend: actualSpend ?? null, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
   }
   return { weeklyResults: results, totalInterest: results.reduce((sum, row) => sum + row.interest, 0) };
 }
