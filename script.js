@@ -178,7 +178,7 @@ class CostProjectorApp {
     const complete = dateOnly(endInput.value) < dateOnly(new Date());
     amountInput.disabled = !complete;
     saveButton.disabled = !complete;
-    message.textContent = complete ? '' : 'Actual spend is available after this week ends.';
+    message.textContent = '';
   }
   async saveActualSpend() {
     const start = document.getElementById('actualWeekStart').value, end = sundayOf(start), amount = Number(document.getElementById('actualWeeklySpend').value), message = document.getElementById('actual-spend-message');
