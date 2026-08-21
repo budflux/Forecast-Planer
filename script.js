@@ -234,26 +234,36 @@ class CostProjectorApp {
     });
     document.addEventListener('input', event => { if (event.target.matches('#actualWeekStart')) this.renderActualSpendControls(); if (event.target.matches('#loanStartDate,#loanTerm,#loanAmount,#interestRate')) this.saveSettings(); const table = event.target.closest('[data-table]')?.dataset.table; if (table) { const row = event.target.closest('[data-row]'); this.readRow(row); this.save(); if (table === 'deposits' && event.target.name === 'amount') console.log('[deposit input]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); } if (event.target.matches('#targetDate,#targetAmount')) this.refresh(); if (event.target.matches('#changeRate')) this.updateChangeRepayment(); this.refresh(false); this.renderSettings(); this.renderForecast(); });
     document.addEventListener('keydown', event => { if (event.key !== 'Enter' || event.target.name !== 'amount' || !event.target.closest('[data-table="deposits"]')) return; const row = event.target.closest('[data-row]'); console.log('[deposit Enter]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); });
-    document.getElementById('statement-upload').addEventListener('change', event => { const [file] = event.target.files; if (file) this.importStatement(file); });
+    document.getElementById('statement-upload').addEventListener('change', event => { const files = [...event.target.files]; if (files.length) this.importStatements(files); });
   }
-  async importStatement(file) {
-    const status = document.getElementById('statement-import-status');
-    status.textContent = 'Reading statement…';
+  async importStatements(files) {
+    const status = document.getElementById('statement-import-status'), weekly = new Map();
+    let transactionCount = 0;
     try {
-      if (!/\.pdf$/i.test(file.name)) throw new Error('Choose a PDF statement.');
-      const { rows, transactionCount } = parseStatement(await pdfLines(file));
+      for (const [index, file] of files.entries()) {
+        if (!/\.pdf$/i.test(file.name)) throw new Error(`${file.name} is not a PDF statement.`);
+        status.textContent = `Reading statement ${index + 1} of ${files.length}…`;
+        const parsed = parseStatement(await pdfLines(file));
+        transactionCount += parsed.transactionCount;
+        for (const row of parsed.rows) {
+          const existing = weekly.get(row.weekStart);
+          if (existing && existing.amount !== row.amount) throw new Error(`Statements contain conflicting totals for week ${row.weekStart}.`);
+          weekly.set(row.weekStart, row);
+        }
+      }
+      const rows = [...weekly.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
       const existing = new Set(this.data.actualWeeklySpend.map(row => row.weekStart)), replacements = rows.filter(row => existing.has(row.weekStart)).length;
       const total = rows.reduce((sum, row) => sum + row.amount, 0);
-      const preview = [`${transactionCount} transactions found`, `${rows.length} complete weeks: ${rows[0].weekStart} to ${rows.at(-1).weekEnd}`, `${money(total)} spending`, `${replacements} existing weeks will be replaced`, '', 'Import these weekly totals?'].join('\n');
+      const preview = [`${files.length} statements`, `${transactionCount} transactions found`, `${rows.length} complete weeks: ${rows[0].weekStart} to ${rows.at(-1).weekEnd}`, `${money(total)} spending`, `${replacements} existing weeks will be replaced`, '', 'Import these weekly totals?'].join('\n');
       if (!window.confirm(preview)) { status.textContent = 'Import cancelled.'; return; }
       await this.repo.saveActualWeeklySpends(rows);
       this.data = this.repo.getData();
       this.refresh();
       this.renderActualSpendControls();
-      status.textContent = `${rows.length} weeks imported.`;
+      status.textContent = `${files.length} statements and ${rows.length} weeks imported.`;
     } catch (error) {
       console.error(error);
-      status.textContent = error.message || 'The statement could not be imported.';
+      status.textContent = error.message || 'The statements could not be imported.';
     } finally {
       document.getElementById('statement-upload').value = '';
     }
