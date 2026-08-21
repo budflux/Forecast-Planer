@@ -442,65 +442,9 @@ input[type="text"][readonly] {
   min-height: 36px;
 }
 
-.actual-spend-controls {
-  position: relative;
-  display: flex;
-  flex: 1 1 auto;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 1rem;
-  min-width: 0;
-  padding: 0.5rem;
-}
-
-.actual-spend-controls > div {
-  display: flex;
-  flex: 0 1 25%;
-  align-items: center;
-  gap: 0.4rem;
-  width: 25%;
-  max-width: 25%;
-  min-width: 0;
-  padding: 0.35rem;
-}
-
-.actual-spend-controls > div input {
-  min-width: 0;
-}
-
-.actual-spend-controls > button {
-  flex: 0 0 10%;
-  margin-left: 0.5rem;
-  padding: 0.5rem 1rem;
-}
-
 .purchase-toolbar > button {
   flex: 0 0 auto;
   margin-left: auto;
-}
-
-.actual-spend-controls label {
-  margin-bottom: 0.2rem;
-  white-space: nowrap;
-}
-
-.actual-spend-controls input,
-.actual-spend-controls button {
-  min-height: 36px;
-  padding: 0.35rem;
-}
-
-#actual-spend-message {
-  display: none;
-  margin: 0;
-  font-size: 0.8rem;
-}
-
-#actual-spend-message:not(:empty) {
-  position: absolute;
-  top: 100%;
-  left: 0.5rem;
-  display: block;
 }
 
 .purchase-wrapper {
