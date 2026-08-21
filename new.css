@@ -269,6 +269,14 @@ button {
   }
 }
 
+#interest-cost-grid {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(10rem, 1fr);
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
 /* ------------------
    Dynamic Containers
 ------------------ */
