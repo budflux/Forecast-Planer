@@ -269,7 +269,8 @@ button {
   }
 }
 
-#interest-cost-grid {
+#interest-cost-grid,
+#offset-balance-grid {
   grid-template-columns: none;
   grid-auto-flow: column;
   grid-auto-columns: minmax(10rem, 1fr);
