@@ -423,7 +423,7 @@ input[type="text"][readonly] {
   position: relative;
   display: flex;
   flex: 1 1 auto;
-  align-items: end;
+  align-items: center;
   justify-content: flex-end;
   gap: 1rem;
   min-width: 0;
