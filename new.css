@@ -421,10 +421,15 @@ input[type="text"][readonly] {
 
 .actual-spend-controls {
   display: grid;
-  flex: 1 0 35rem;
+  flex: 1 1 auto;
   grid-template-columns: repeat(3, minmax(8rem, 1fr)) max-content;
   align-items: end;
   gap: 0.5rem;
+}
+
+.purchase-toolbar > button {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .actual-spend-controls label {
