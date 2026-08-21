@@ -432,11 +432,11 @@ input[type="text"][readonly] {
 
 .actual-spend-controls > div {
   display: flex;
-  flex: 0 1 16%;
+  flex: 0 1 25%;
   align-items: center;
   gap: 0.4rem;
-  width: 16%;
-  max-width: 16%;
+  width: 25%;
+  max-width: 25%;
   min-width: 0;
   padding: 0.35rem;
 }
