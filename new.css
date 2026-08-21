@@ -420,24 +420,28 @@ input[type="text"][readonly] {
 }
 
 .actual-spend-controls {
-  display: grid;
-  flex: 1 0 52rem;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
   align-items: end;
   gap: 1rem;
-  min-width: 52rem;
+  min-width: 0;
   padding: 0.5rem;
 }
 
 .actual-spend-controls > div {
   display: grid;
+  flex: 0 1 16%;
   gap: 0.4rem;
+  width: 16%;
+  max-width: 16%;
   min-width: 0;
-  padding: 0.5rem;
+  padding: 0.35rem;
 }
 
 .actual-spend-controls > button {
-  grid-column: 5;
+  flex: 0 0 16%;
+  margin-left: auto;
 }
 
 .purchase-toolbar > button {
@@ -458,12 +462,14 @@ input[type="text"][readonly] {
 
 #actual-spend-message {
   display: none;
-  grid-column: 1 / -1;
   margin: 0;
   font-size: 0.8rem;
 }
 
 #actual-spend-message:not(:empty) {
+  position: absolute;
+  top: 100%;
+  left: 0.5rem;
   display: block;
 }
 
