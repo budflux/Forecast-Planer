@@ -275,7 +275,12 @@ button {
   grid-auto-flow: column;
   grid-auto-columns: minmax(10rem, 1fr);
   overflow-x: auto;
-  padding-bottom: 0.5rem;
+  scrollbar-width: none;
+}
+
+#interest-cost-grid::-webkit-scrollbar,
+#offset-balance-grid::-webkit-scrollbar {
+  display: none;
 }
 
 /* ------------------
