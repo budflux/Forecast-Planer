@@ -407,7 +407,7 @@ input[type="text"][readonly] {
 
 .purchase-toolbar h2 {
   display: flex;
-  flex: 0 0 20rem;
+  flex: 0 0 30rem;
   align-items: center;
   gap: 0.4rem;
   font-size: 1.15rem;
@@ -415,7 +415,7 @@ input[type="text"][readonly] {
 }
 
 #purchase-total {
-  width: 8rem;
+  width: 12rem;
   min-height: 36px;
 }
 
