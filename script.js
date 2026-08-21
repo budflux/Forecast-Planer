@@ -243,7 +243,8 @@ class CostProjectorApp {
       if (action === 'add-rate') this.addRate();
       if (event.target.closest('[data-delete]')) this.remove(event.target.closest('[data-delete]').dataset.delete, event.target.closest('[data-delete]').dataset.id);
     });
-    document.addEventListener('input', event => { if (event.target.matches('#actualWeekStart')) this.renderActualSpendControls(); if (event.target.matches('#loanStartDate,#loanTerm,#loanAmount,#interestRate')) this.saveSettings(); const table = event.target.closest('[data-table]')?.dataset.table; if (table) { const row = event.target.closest('[data-row]'); this.readRow(row); this.save(); if (table === 'deposits' && event.target.name === 'amount') console.log('[deposit input]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); } if (event.target.matches('#targetDate,#targetAmount')) this.refresh(); if (event.target.matches('#changeRate')) this.updateChangeRepayment(); this.refresh(false); this.renderSettings(); this.renderForecast(); });
+    document.addEventListener('input', event => { if (event.target.type === 'date' && !this.validateDateInput(event.target)) return; if (event.target.matches('#actualWeekStart')) this.renderActualSpendControls(); if (event.target.matches('#loanStartDate,#loanTerm,#loanAmount,#interestRate')) this.saveSettings(); const table = event.target.closest('[data-table]')?.dataset.table; if (table) { const row = event.target.closest('[data-row]'); this.readRow(row); this.save(); if (table === 'deposits' && event.target.name === 'amount') console.log('[deposit input]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); } if (event.target.matches('#targetDate,#targetAmount')) this.refresh(); if (event.target.matches('#changeRate')) this.updateChangeRepayment(); this.refresh(false); this.renderSettings(); this.renderForecast(); });
+    document.addEventListener('change', event => { if (event.target.type === 'date') this.validateDateInput(event.target, true); });
     document.addEventListener('keydown', event => { if (event.key !== 'Enter' || event.target.name !== 'amount' || !event.target.closest('[data-table="deposits"]')) return; const row = event.target.closest('[data-row]'); console.log('[deposit Enter]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); });
     document.getElementById('statement-upload').addEventListener('change', event => { const files = [...event.target.files]; if (files.length) this.importStatements(files); });
   }
@@ -278,6 +279,16 @@ class CostProjectorApp {
     } finally {
       document.getElementById('statement-upload').value = '';
     }
+  }
+  validateDateInput(input, report = false) {
+    let message = input.value && validDate(input.value) ? '' : 'Choose a complete date in DD/MM/YYYY format.';
+    const row = input.closest('[data-row]'), from = row?.querySelector('[name="fromDate"]'), to = row?.querySelector('[name="toDate"]');
+    from?.setCustomValidity('');
+    to?.setCustomValidity('');
+    if (!message && from?.value && to?.value && dateOnly(from.value) > dateOnly(to.value)) message = 'The end date must be on or after the start date.';
+    input.setCustomValidity(message);
+    if (report && message) input.reportValidity();
+    return !message;
   }
   add(table, record) { record.id = id(); this.data[table].push(record); this.save(); this.render(); }
   addRate() { const date = document.getElementById('changeDate').value, rate = Number(document.getElementById('changeRate').value || 0); if (!date) return; this.data.loanInputs.push({ id: id(), effectiveDate: date, interestRate: rate, weeklyRepayment: Number(document.getElementById('changeRepayment').value || 0) }); this.save(); this.render(); }
