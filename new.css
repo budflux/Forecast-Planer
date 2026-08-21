@@ -421,19 +421,18 @@ input[type="text"][readonly] {
 
 .actual-spend-controls {
   display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: repeat(5, minmax(7rem, 1fr));
+  flex: 1 0 52rem;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   align-items: end;
-  gap: 0.75rem;
-}
-
-.actual-spend-controls > * {
-  margin: 0.25rem;
+  gap: 1rem;
+  min-width: 52rem;
+  padding: 0.5rem;
 }
 
 .actual-spend-controls > div {
   display: grid;
   gap: 0.4rem;
+  min-width: 0;
   padding: 0.5rem;
 }
 
