@@ -161,6 +161,15 @@ button {
   cursor: pointer;
 }
 
+#statement-import-status {
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+#statement-import-status:empty {
+  display: none;
+}
+
 .sheet-header button {
   width: auto;
   min-width: 140px;

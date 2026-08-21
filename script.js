@@ -14,6 +14,74 @@ const mondayOf = value => { const date = dateOnly(value); if (!validDate(value))
 const sundayOf = value => { const monday = dateOnly(value); if (!validDate(value)) return ''; monday.setDate(monday.getDate() + 6); return inputDate(monday); };
 const inRange = (date, from, to) => validDate(from) && validDate(to) && dateOnly(date) >= dateOnly(from) && dateOnly(date) <= dateOnly(to);
 const isDateInWeek = (value, weekStart) => inRange(value, weekStart, new Date(dateOnly(weekStart).getTime() + 6 * 86400000));
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+function statementPeriod(text) {
+  const numeric = text.match(/from\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+to\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+  if (numeric) return { start: dateOnly(`${numeric[3]}-${numeric[2].padStart(2, '0')}-${numeric[1].padStart(2, '0')}`), end: dateOnly(`${numeric[6]}-${numeric[5].padStart(2, '0')}-${numeric[4].padStart(2, '0')}`) };
+  const listing = text.match(/transactions\s*\((\d{1,2})-([A-Za-z]{3})-(\d{4})\s+to\s+(\d{1,2})-([A-Za-z]{3})-(\d{4})\)/i);
+  if (!listing) throw new Error('The statement period could not be found.');
+  return { start: new Date(Number(listing[3]), MONTHS.indexOf(listing[2].toLowerCase()), Number(listing[1])), end: new Date(Number(listing[6]), MONTHS.indexOf(listing[5].toLowerCase()), Number(listing[4])) };
+}
+
+function transactionDate(day, month, period) {
+  const monthIndex = MONTHS.indexOf(month.toLowerCase());
+  if (monthIndex < 0) return undefined;
+  return [...new Set([period.start.getFullYear(), period.end.getFullYear()])]
+    .map(year => new Date(year, monthIndex, Number(day)))
+    .find(date => date >= period.start && date <= period.end);
+}
+
+function parseStatement(lines) {
+  const text = lines.join('\n'), period = statementPeriod(text), listing = /Transaction Listing/i.test(text), transactions = [];
+  let malformed = 0;
+  for (const line of lines) {
+    const candidate = /^\d{1,2}\s+[A-Za-z]{3}\s+/.test(line) && /\$/.test(line);
+    const match = line.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(.+?)\s+(-?\$\s*[\d,]+\.\d{2})(?:\s+(CR))?$/i);
+    if (!match) { if (candidate) malformed++; continue; }
+    if (/\bPAYMENT\b/i.test(match[3])) continue;
+    const date = transactionDate(match[1], match[2], period);
+    if (!date) continue;
+    const amount = Number(match[4].replace(/[^\d.]/g, ''));
+    const spend = listing ? (match[4].startsWith('-') ? amount : -amount) : (match[5] ? -amount : amount);
+    transactions.push({ date, spend });
+  }
+  if (malformed) throw new Error(`${malformed} transaction rows could not be read.`);
+  if (!transactions.length) throw new Error('No transaction rows were found in this PDF.');
+  const today = dateOnly(new Date()), weekly = new Map();
+  for (const transaction of transactions) {
+    const weekStart = mondayOf(transaction.date), weekEnd = sundayOf(weekStart);
+    if (dateOnly(weekEnd) >= today || dateOnly(weekStart) < period.start || dateOnly(weekEnd) > period.end) continue;
+    weekly.set(weekStart, (weekly.get(weekStart) || 0) + transaction.spend);
+  }
+  const rows = [...weekly].map(([weekStart, amount]) => ({ weekStart, weekEnd: sundayOf(weekStart), amount: Math.max(0, Math.round(amount * 100) / 100) })).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+  if (!rows.length) throw new Error('No fully covered, completed weeks were found.');
+  return { rows, transactionCount: transactions.length, period };
+}
+
+function statementParserSelfCheck() {
+  const { rows } = parseStatement(['(from 01/01/2000 to 31/01/2000):', '3 Jan SHOP $10.00', '4 Jan REFUND $2.00 CR', '5 Jan PAYMENT - BPAY $100.00 CR']);
+  if (rows.length !== 1 || rows[0].amount !== 8 || rows[0].weekStart !== '2000-01-03') throw new Error('Statement parser self-check failed.');
+}
+
+statementParserSelfCheck();
+
+async function pdfLines(file) {
+  if (!window.pdfjsLib) throw new Error('The PDF reader did not load.');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await window.pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise, lines = [];
+  for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
+    const { items } = await (await pdf.getPage(pageNumber)).getTextContent(), rows = [];
+    for (const item of items.filter(item => item.str.trim())) {
+      const y = item.transform[5];
+      let row = rows.find(candidate => Math.abs(candidate.y - y) < 2);
+      if (!row) { row = { y, items: [] }; rows.push(row); }
+      row.items.push({ x: item.transform[4], text: item.str.trim() });
+    }
+    rows.sort((a, b) => b.y - a.y).forEach(row => lines.push(row.items.sort((a, b) => a.x - b.x).map(item => item.text).join(' ').replace(/\s+/g, ' ')));
+  }
+  return lines;
+}
 
 class DataRepository {
   constructor(client, user) { this.client = client; this.user = user; this.cache = {}; this.settings = {}; }
@@ -33,11 +101,13 @@ class DataRepository {
     this.settings[key] = row.value;
   }
   collection(table, order = 'id') { return [...(this.cache[table] || [])].sort((a, b) => String(a[order] || '').localeCompare(String(b[order] || ''))); }
-  async saveActualWeeklySpend(weekStart, weekEnd, amount) {
-    const row = { user_id: this.user.id, weekStart, weekEnd, amount: Number(amount) };
-    const { data, error } = await this.client.from('actual_weekly_spend').upsert(row, { onConflict: 'user_id,weekStart' }).select().single();
+  async saveActualWeeklySpend(weekStart, weekEnd, amount) { await this.saveActualWeeklySpends([{ weekStart, weekEnd, amount }]); }
+  async saveActualWeeklySpends(records) {
+    const rows = records.map(record => ({ ...record, user_id: this.user.id }));
+    const { data, error } = await this.client.from('actual_weekly_spend').upsert(rows, { onConflict: 'user_id,weekStart' }).select();
     if (error) throw error;
-    this.cache.actual_weekly_spend = [...(this.cache.actual_weekly_spend || []).filter(item => item.weekStart !== weekStart), data];
+    const starts = new Set(records.map(row => row.weekStart));
+    this.cache.actual_weekly_spend = [...(this.cache.actual_weekly_spend || []).filter(row => !starts.has(row.weekStart)), ...(data || rows)];
   }
   async saveCollection(table, fields, records) {
     const dateFields = new Set(['fromDate', 'toDate', 'date', 'depositDate', 'effectiveDate']);
@@ -84,7 +154,7 @@ function runForecast(settings, data) {
     return { weeklyResults: [], totalInterest: 0 };
   }
   const results = [], start = dateOnly(mondayOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
-  const actualByWeek = Object.fromEntries(data.actualWeeklySpend.map(row => [row.weekStart, Number(row.amount)]));
+  const actualByWeek = Object.fromEntries(data.actualWeeklySpend.map(row => [row.weekStart, Number(row.amount)])), currentWeekStart = mondayOf(new Date());
   const initialOffset = data.deposits.filter(row => validDate(row.depositDate || row.date) && dateOnly(row.depositDate || row.date) < start).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   let balance = Number(settings.loanAmount), offset = initialOffset, repayment = weeklyRepayment(balance, settings.interestRate, settings.loanTerm), previousRate, loanFullyPaid = false, redrawBalance = 0;
   if (initialOffset) console.log('[initial offset]', { amount: initialOffset, loanStartDate: settings.loanStartDate });
@@ -97,7 +167,7 @@ function runForecast(settings, data) {
     const rental = data.rentals.find(row => inRange(current, row.fromDate, row.toDate));
     const fixed = data.fixedCosts.find(row => Number(row.startYear) <= current.getFullYear() && Number(row.endYear) >= current.getFullYear());
     const forecastPurchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const weekStart = inputDate(current), actualSpend = actualByWeek[weekStart], purchases = actualSpend == null ? forecastPurchases : actualSpend;
+    const weekStart = inputDate(current), actualSpend = weekStart < currentWeekStart ? actualByWeek[weekStart] : undefined, purchases = actualSpend == null ? forecastPurchases : actualSpend;
     const matchingDeposits = data.deposits.filter(row => isDateInWeek(row.depositDate || row.date, current));
     const deposits = matchingDeposits.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const weeklyFixed = Number(fixed?.totalYearlyCost || 0) / 52;
@@ -148,7 +218,7 @@ class CostProjectorApp {
     document.addEventListener('click', event => {
       const action = event.target.closest('[data-action]')?.dataset.action;
       if (event.target.closest('[data-page]')) this.showPage(event.target.closest('[data-page]').dataset.page);
-      if (action === 'update') this.refresh();
+      if (action === 'upload-statement') document.getElementById('statement-upload').click();
       if (action === 'report') this.openForecastReport();
       if (action === 'sign-out') supabaseClient.auth.signOut();
       if (action === 'save-actual-spend') this.saveActualSpend();
@@ -164,6 +234,29 @@ class CostProjectorApp {
     });
     document.addEventListener('input', event => { if (event.target.matches('#actualWeekStart')) this.renderActualSpendControls(); if (event.target.matches('#loanStartDate,#loanTerm,#loanAmount,#interestRate')) this.saveSettings(); const table = event.target.closest('[data-table]')?.dataset.table; if (table) { const row = event.target.closest('[data-row]'); this.readRow(row); this.save(); if (table === 'deposits' && event.target.name === 'amount') console.log('[deposit input]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); } if (event.target.matches('#targetDate,#targetAmount')) this.refresh(); if (event.target.matches('#changeRate')) this.updateChangeRepayment(); this.refresh(false); this.renderSettings(); this.renderForecast(); });
     document.addEventListener('keydown', event => { if (event.key !== 'Enter' || event.target.name !== 'amount' || !event.target.closest('[data-table="deposits"]')) return; const row = event.target.closest('[data-row]'); console.log('[deposit Enter]', { id: row.dataset.id, date: row.querySelector('[name="depositDate"]').value, amount: row.querySelector('[name="amount"]').value }); });
+    document.getElementById('statement-upload').addEventListener('change', event => { const [file] = event.target.files; if (file) this.importStatement(file); });
+  }
+  async importStatement(file) {
+    const status = document.getElementById('statement-import-status');
+    status.textContent = 'Reading statement…';
+    try {
+      if (!/\.pdf$/i.test(file.name)) throw new Error('Choose a PDF statement.');
+      const { rows, transactionCount } = parseStatement(await pdfLines(file));
+      const existing = new Set(this.data.actualWeeklySpend.map(row => row.weekStart)), replacements = rows.filter(row => existing.has(row.weekStart)).length;
+      const total = rows.reduce((sum, row) => sum + row.amount, 0);
+      const preview = [`${transactionCount} transactions found`, `${rows.length} complete weeks: ${rows[0].weekStart} to ${rows.at(-1).weekEnd}`, `${money(total)} spending`, `${replacements} existing weeks will be replaced`, '', 'Import these weekly totals?'].join('\n');
+      if (!window.confirm(preview)) { status.textContent = 'Import cancelled.'; return; }
+      await this.repo.saveActualWeeklySpends(rows);
+      this.data = this.repo.getData();
+      this.refresh();
+      this.renderActualSpendControls();
+      status.textContent = `${rows.length} weeks imported.`;
+    } catch (error) {
+      console.error(error);
+      status.textContent = error.message || 'The statement could not be imported.';
+    } finally {
+      document.getElementById('statement-upload').value = '';
+    }
   }
   add(table, record) { record.id = id(); this.data[table].push(record); this.save(); this.render(); }
   addRate() { const date = document.getElementById('changeDate').value, rate = Number(document.getElementById('changeRate').value || 0); if (!date) return; this.data.loanInputs.push({ id: id(), effectiveDate: date, interestRate: rate, weeklyRepayment: Number(document.getElementById('changeRepayment').value || 0) }); this.save(); this.render(); }

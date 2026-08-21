@@ -17,7 +17,7 @@
     </form>
   </section>
   <header>
-    <h1 class="page-title"><span>Forecast Planner</span><button data-action="update">Update</button><button data-action="report">Report</button><button data-action="sign-out">Sign out</button></h1>
+    <h1 class="page-title"><span>Forecast Planner</span><button type="button" data-action="upload-statement">Upload statement</button><input id="statement-upload" type="file" accept="application/pdf,.pdf" hidden><span id="statement-import-status" role="status"></span><button data-action="report">Report</button><button data-action="sign-out">Sign out</button></h1>
     <nav aria-label="Main navigation">
       <button class="nav-btn" data-page="page-forecast">Forecast</button>
       <button class="nav-btn" data-page="page-earnings">Earnings</button>
@@ -86,6 +86,7 @@
       <div class="forecast-wrapper"><div class="forecast-grid headers"><div class="card header">Period</div><div class="card header">Spend</div><div class="card header">Deposits</div><div class="card header">Offset</div><div class="card header">Loan Outstanding</div><div class="card header">Redraw</div><div class="card header">Gap</div></div><div id="forecast-container"></div></div>
     </section>
   </main>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="supabase-config.js"></script>
   <script src="script.js"></script>
