@@ -15,6 +15,7 @@ const sundayOf = value => { const monday = dateOnly(value); if (!validDate(value
 const inRange = (date, from, to) => validDate(from) && validDate(to) && dateOnly(date) >= dateOnly(from) && dateOnly(date) <= dateOnly(to);
 const isDateInWeek = (value, weekStart) => inRange(value, weekStart, new Date(dateOnly(weekStart).getTime() + 6 * 86400000));
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+let lastWageAuditSignature = '';
 
 function statementPeriod(text) {
   const numeric = text.match(/from\s+(\d{1,2})\/(\d{1,2})\/(\d{4})\s+to\s+(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
@@ -89,6 +90,8 @@ class DataRepository {
     const tables = ['earnings', 'rentals', 'purchases', 'deposits', 'fixed_costs', 'loan_inputs'];
     const results = await Promise.all([...tables, 'actual_weekly_spend'].map(table => this.client.from(table).select('*')));
     results.forEach((result, index) => { if (result.error) throw result.error; this.cache[[...tables, 'actual_weekly_spend'][index]] = result.data || []; });
+    console.info(`[database] ${this.cache.earnings.length} wage-income rows loaded`);
+    console.table(this.cache.earnings);
     const settings = await this.client.from('settings').select('key,value');
     if (settings.error) throw settings.error;
     this.settings = Object.fromEntries((settings.data || []).map(row => [row.key, row.value]));
@@ -153,7 +156,7 @@ function runForecast(settings, data) {
     console.warn('[forecast skipped] incomplete loan settings');
     return { weeklyResults: [], totalInterest: 0 };
   }
-  const results = [], start = dateOnly(mondayOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
+  const results = [], wageAudit = [], start = dateOnly(mondayOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
   const actualByWeek = Object.fromEntries(data.actualWeeklySpend.map(row => [row.weekStart, Number(row.amount)])), currentWeekStart = mondayOf(new Date());
   const initialOffset = data.deposits.filter(row => validDate(row.depositDate || row.date) && dateOnly(row.depositDate || row.date) < start).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   let balance = Number(settings.loanAmount), offset = initialOffset, repayment = weeklyRepayment(balance, settings.interestRate, settings.loanTerm), previousRate, loanFullyPaid = false, redrawBalance = 0;
@@ -164,6 +167,7 @@ function runForecast(settings, data) {
     const rate = Number(rateChange?.interestRate ?? settings.interestRate);
     if (rate !== previousRate) { repayment = Number(rateChange?.weeklyRepayment) || weeklyRepayment(balance, rate, Math.max((weeks - week) / 52, 1 / 52)); previousRate = rate; }
     const earning = data.earnings.find(row => inRange(current, row.fromDate, row.toDate)) || {};
+    if (current.getFullYear() === 2025 || current.getFullYear() === 2026) wageAudit.push({ weekStart: inputDate(current), wageFrom: earning.fromDate || 'NO MATCH', wageTo: earning.toDate || 'NO MATCH', weeklyWage: Number(earning.weeklyWage || 0) });
     const rental = data.rentals.find(row => inRange(current, row.fromDate, row.toDate));
     const fixed = data.fixedCosts.find(row => Number(row.startYear) <= current.getFullYear() && Number(row.endYear) >= current.getFullYear());
     const purchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
@@ -186,11 +190,18 @@ function runForecast(settings, data) {
     const redrawAmount = loanFullyPaid ? redrawBalance : calculateRedraw(settings.loanAmount, rate, settings.loanTerm, week + 1, balance);
     results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklySpend, forecastSpend, actualSpend: actualSpend ?? null, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
   }
+  const wageAuditSignature = JSON.stringify({ loanStartDate: settings.loanStartDate, earnings: data.earnings });
+  if (wageAuditSignature !== lastWageAuditSignature) {
+    console.groupCollapsed('[forecast wage audit] 2025–2026');
+    console.table(wageAudit);
+    console.groupEnd();
+    lastWageAuditSignature = wageAuditSignature;
+  }
   return { weeklyResults: results, totalInterest: results.reduce((sum, row) => sum + row.interest, 0) };
 }
 
 class CostProjectorApp {
-  constructor() { this.repo = null; this.data = {}; this.settings = {}; this.forecast = { weeklyResults: [] }; }
+  constructor() { this.repo = null; this.data = {}; this.settings = {}; this.forecast = { weeklyResults: [] }; this.saveQueue = Promise.resolve(); }
   async start() {
     if (!supabaseClient || !supabaseAnonKey || supabaseAnonKey.startsWith('PASTE_')) throw new Error('Add the Supabase anon key to supabase-config.js.');
     const { data: { session } } = await supabaseClient.auth.getSession();
@@ -292,7 +303,7 @@ class CostProjectorApp {
   }
   saveSettings() { this.settings = { loanStartDate: document.getElementById('loanStartDate').value, loanTerm: Number(document.getElementById('loanTerm').value || 0), loanAmount: Number(document.getElementById('loanAmount').value || 0), interestRate: Number(document.getElementById('interestRate').value || 0) }; Object.entries(this.settings).forEach(([key, value]) => this.repo.setSetting(key, value).catch(error => console.error('Could not save setting', error))); }
   readRow(row) { const table = row.closest('[data-table]').dataset.table, record = this.data[table].find(item => String(item.id) === row.dataset.id); if (!record) return; row.querySelectorAll('[name]').forEach(input => { record[input.name] = input.type === 'checkbox' ? (input.checked ? 1 : 0) : input.type === 'number' ? Number(input.value || 0) : input.value; }); }
-  async save() { const specs = { earnings: ['id','fromDate','toDate','weeklyWage','weeklySpend'], rentals: ['id','fromDate','toDate','weeklyRental'], purchases: ['id','date','description','amount','includeFlag'], deposits: ['id','depositDate','description','amount'], fixedCosts: ['id','startYear','endYear','totalYearlyCost'], loanInputs: ['id','effectiveDate','interestRate','weeklyRepayment'] }; try { await Promise.all(Object.entries(specs).map(([table, fields]) => this.repo.saveCollection(table === 'fixedCosts' ? 'fixed_costs' : table === 'loanInputs' ? 'loan_inputs' : table, fields, this.data[table]))); } catch (error) { console.error('Could not save planner data', error); } }
+  save() { const specs = { earnings: ['id','fromDate','toDate','weeklyWage','weeklySpend'], rentals: ['id','fromDate','toDate','weeklyRental'], purchases: ['id','date','description','amount','includeFlag'], deposits: ['id','depositDate','description','amount'], fixedCosts: ['id','startYear','endYear','totalYearlyCost'], loanInputs: ['id','effectiveDate','interestRate','weeklyRepayment'] }; this.saveQueue = this.saveQueue.then(() => Promise.all(Object.entries(specs).map(([table, fields]) => this.repo.saveCollection(table === 'fixedCosts' ? 'fixed_costs' : table === 'loanInputs' ? 'loan_inputs' : table, fields, this.data[table])))).catch(error => console.error('Could not save planner data', error)); return this.saveQueue; }
   refresh(render = true) { this.forecast = runForecast(this.settings, this.data); if (render) this.render(); }
   showPage(page) { document.querySelectorAll('.app-page').forEach(section => section.classList.toggle('active', section.id === page)); document.querySelectorAll('.nav-btn').forEach(button => button.classList.toggle('active', button.dataset.page === page)); }
   render() { this.refresh(false); this.renderSettings(); this.renderRows('earning-container', 'earnings', [['date','fromDate'],['date','toDate'],['number','weeklyWage'],['number','weeklySpend']]); this.renderRows('fixed-cost-container', 'fixedCosts', [['number','startYear'],['number','endYear'],['number','totalYearlyCost']]); this.renderRows('offset-deposit-container', 'deposits', [['date','depositDate'],['text','description'],['number','amount']]); this.renderRows('rental-container', 'rentals', [['date','fromDate'],['date','toDate'],['number','weeklyRental']]); this.renderRows('purchase-container', 'purchases', [['date','date'],['text','description'],['number','amount'],['checkbox','includeFlag']]); this.renderForecast(); }
