@@ -48,21 +48,19 @@ function parseStatement(lines) {
     transactions.push({ date, spend });
   }
   if (malformed) throw new Error(`${malformed} transaction rows could not be read.`);
-  if (!transactions.length) throw new Error('No transaction rows were found in this PDF.');
-  const today = dateOnly(new Date()), weekly = new Map();
+  const daily = new Map();
+  for (let date = new Date(period.start); date <= period.end; date.setDate(date.getDate() + 1)) daily.set(inputDate(date), 0);
   for (const transaction of transactions) {
-    const weekStart = mondayOf(transaction.date), weekEnd = sundayOf(weekStart);
-    if (dateOnly(weekEnd) >= today || dateOnly(weekStart) < period.start || dateOnly(weekEnd) > period.end) continue;
-    weekly.set(weekStart, (weekly.get(weekStart) || 0) + transaction.spend);
+    const spendDate = inputDate(transaction.date);
+    daily.set(spendDate, (daily.get(spendDate) || 0) + transaction.spend);
   }
-  const rows = [...weekly].map(([weekStart, amount]) => ({ weekStart, weekEnd: sundayOf(weekStart), amount: Math.max(0, Math.round(amount * 100) / 100) })).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-  if (!rows.length) throw new Error('No fully covered, completed weeks were found.');
+  const rows = [...daily].map(([spend_date, amount]) => ({ spend_date, amount: Math.round(amount * 100) / 100 }));
   return { rows, transactionCount: transactions.length, period };
 }
 
 function statementParserSelfCheck() {
   const { rows } = parseStatement(['(from 01/01/2000 to 31/01/2000):', '3 Jan SHOP $10.00', '4 Jan REFUND $2.00 CR', '5 Jan PAYMENT - BPAY $100.00 CR']);
-  if (rows.length !== 1 || rows[0].amount !== 8 || rows[0].weekStart !== '2000-01-03') throw new Error('Statement parser self-check failed.');
+  if (rows.length !== 31 || rows.find(row => row.spend_date === '2000-01-03')?.amount !== 10 || rows.find(row => row.spend_date === '2000-01-04')?.amount !== -2) throw new Error('Statement parser self-check failed.');
 }
 
 statementParserSelfCheck();
@@ -87,9 +85,9 @@ async function pdfLines(file) {
 class DataRepository {
   constructor(client, user) { this.client = client; this.user = user; this.cache = {}; this.settings = {}; }
   async init() {
-    const tables = ['earnings', 'rentals', 'purchases', 'deposits', 'fixed_costs', 'loan_inputs'];
-    const results = await Promise.all([...tables, 'actual_weekly_spend'].map(table => this.client.from(table).select('*')));
-    results.forEach((result, index) => { if (result.error) throw result.error; this.cache[[...tables, 'actual_weekly_spend'][index]] = result.data || []; });
+    const tables = ['earnings', 'rentals', 'purchases', 'deposits', 'fixed_costs', 'loan_inputs', 'actual_weekly_spend', 'statement_daily_spend'];
+    const results = await Promise.all(tables.map(table => this.client.from(table).select('*')));
+    results.forEach((result, index) => { if (result.error) throw result.error; this.cache[tables[index]] = result.data || []; });
     console.info(`[database] ${this.cache.earnings.length} wage-income rows loaded`);
     console.table(this.cache.earnings);
     const settings = await this.client.from('settings').select('key,value');
@@ -112,6 +110,17 @@ class DataRepository {
     const starts = new Set(records.map(row => row.weekStart));
     this.cache.actual_weekly_spend = [...(this.cache.actual_weekly_spend || []).filter(row => !starts.has(row.weekStart)), ...(data || rows)];
   }
+  async saveStatementDailySpend(records) {
+    const rows = records.map(record => ({ ...record, user_id: this.user.id }));
+    const { data, error } = await this.client.from('statement_daily_spend').upsert(rows, { onConflict: 'user_id,spend_date' }).select();
+    if (error) throw error;
+    const dates = new Set(records.map(row => row.spend_date)), weekStarts = [...new Set(records.map(row => mondayOf(row.spend_date)))];
+    this.cache.statement_daily_spend = [...(this.cache.statement_daily_spend || []).filter(row => !dates.has(row.spend_date)), ...(data || rows)];
+    const { error: deleteError } = await this.client.from('actual_weekly_spend').delete().eq('user_id', this.user.id).in('weekStart', weekStarts);
+    if (deleteError) throw deleteError;
+    const starts = new Set(weekStarts);
+    this.cache.actual_weekly_spend = (this.cache.actual_weekly_spend || []).filter(row => !starts.has(row.weekStart));
+  }
   async saveCollection(table, fields, records) {
     const dateFields = new Set(['fromDate', 'toDate', 'date', 'depositDate', 'effectiveDate']);
     const rows = records.map(record => ({ ...Object.fromEntries(fields.map(field => [field, dateFields.has(field) && record[field] === '' ? null : record[field]])), user_id: this.user.id }));
@@ -129,6 +138,7 @@ class DataRepository {
       deposits: this.collection('deposits', 'depositDate').map(row => ({ ...row, depositDate: row.depositDate || row.date })),
       fixedCosts: this.collection('fixed_costs', 'startYear'), loanInputs: this.collection('loan_inputs', 'effectiveDate'),
       actualWeeklySpend: this.collection('actual_weekly_spend', 'weekStart'),
+      statementDailySpend: this.collection('statement_daily_spend', 'spend_date'),
     };
   }
 }
@@ -157,7 +167,7 @@ function runForecast(settings, data) {
     return { weeklyResults: [], totalInterest: 0 };
   }
   const results = [], wageAudit = [], start = dateOnly(mondayOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
-  const actualByWeek = Object.fromEntries(data.actualWeeklySpend.map(row => [row.weekStart, Number(row.amount)])), currentWeekStart = mondayOf(new Date());
+  const actualByWeek = Object.fromEntries((data.actualWeeklySpend || []).map(row => [row.weekStart, Number(row.amount)])), statementByDate = Object.fromEntries((data.statementDailySpend || []).map(row => [row.spend_date, Number(row.amount)])), currentWeekStart = mondayOf(new Date());
   const initialOffset = data.deposits.filter(row => validDate(row.depositDate || row.date) && dateOnly(row.depositDate || row.date) < start).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   let balance = Number(settings.loanAmount), offset = initialOffset, repayment = weeklyRepayment(balance, settings.interestRate, settings.loanTerm), previousRate, loanFullyPaid = false, redrawBalance = 0;
   if (initialOffset) console.log('[initial offset]', { amount: initialOffset, loanStartDate: settings.loanStartDate });
@@ -171,7 +181,11 @@ function runForecast(settings, data) {
     const rental = data.rentals.find(row => inRange(current, row.fromDate, row.toDate));
     const fixed = data.fixedCosts.find(row => Number(row.startYear) <= current.getFullYear() && Number(row.endYear) >= current.getFullYear());
     const purchases = data.purchases.filter(row => Number(row.includeFlag) && inRange(dateOnly(row.date), current, new Date(current.getTime() + 6 * 86400000))).reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const weekStart = inputDate(current), forecastSpend = Number(earning.weeklySpend || 0), actualSpend = weekStart < currentWeekStart ? actualByWeek[weekStart] : undefined, weeklySpend = actualSpend ?? forecastSpend;
+    const weekStart = inputDate(current), forecastSpend = Number(earning.weeklySpend || 0), historical = weekStart < currentWeekStart, manualSpend = historical ? actualByWeek[weekStart] : undefined;
+    let statementSpend = 0, statementCoveredDays = 0;
+    if (historical) for (let day = 0; day < 7; day++) { const date = new Date(current); date.setDate(current.getDate() + day); const key = inputDate(date); if (Object.hasOwn(statementByDate, key)) { statementSpend += statementByDate[key]; statementCoveredDays++; } }
+    const fallbackSpend = manualSpend ?? forecastSpend, weeklySpend = historical && statementCoveredDays ? statementSpend + fallbackSpend * (7 - statementCoveredDays) / 7 : fallbackSpend;
+    const actualSpend = historical && (statementCoveredDays || manualSpend != null) ? weeklySpend : undefined;
     const matchingDeposits = data.deposits.filter(row => isDateInWeek(row.depositDate || row.date, current));
     const deposits = matchingDeposits.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const weeklyFixed = Number(fixed?.totalYearlyCost || 0) / 52;
@@ -188,7 +202,7 @@ function runForecast(settings, data) {
     }
     if (loanFullyPaid) redrawBalance = Math.max(0, redrawBalance - repayment);
     const redrawAmount = loanFullyPaid ? redrawBalance : calculateRedraw(settings.loanAmount, rate, settings.loanTerm, week + 1, balance);
-    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklySpend, forecastSpend, actualSpend: actualSpend ?? null, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
+    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklySpend, forecastSpend, actualSpend: actualSpend ?? null, statementCoveredDays, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
   }
   const wageAuditSignature = JSON.stringify({ loanStartDate: settings.loanStartDate, earnings: data.earnings });
   if (wageAuditSignature !== lastWageAuditSignature) {
@@ -249,7 +263,7 @@ class CostProjectorApp {
     document.getElementById('statement-upload').addEventListener('change', event => { const files = [...event.target.files]; if (files.length) this.importStatements(files); });
   }
   async importStatements(files) {
-    const status = document.getElementById('statement-import-status'), weekly = new Map();
+    const status = document.getElementById('statement-import-status'), daily = new Map();
     let transactionCount = 0;
     try {
       for (const [index, file] of files.entries()) {
@@ -258,21 +272,21 @@ class CostProjectorApp {
         const parsed = parseStatement(await pdfLines(file));
         transactionCount += parsed.transactionCount;
         for (const row of parsed.rows) {
-          const existing = weekly.get(row.weekStart);
-          if (existing && existing.amount !== row.amount) throw new Error(`Statements contain conflicting totals for week ${row.weekStart}.`);
-          weekly.set(row.weekStart, row);
+          const existing = daily.get(row.spend_date);
+          if (existing && existing.amount !== row.amount) throw new Error(`Statements contain conflicting totals for ${row.spend_date}.`);
+          daily.set(row.spend_date, row);
         }
       }
-      const rows = [...weekly.values()].sort((a, b) => a.weekStart.localeCompare(b.weekStart));
-      const existing = new Set(this.data.actualWeeklySpend.map(row => row.weekStart)), replacements = rows.filter(row => existing.has(row.weekStart)).length;
+      const rows = [...daily.values()].sort((a, b) => a.spend_date.localeCompare(b.spend_date)), dates = new Set(this.data.statementDailySpend.map(row => row.spend_date));
+      const replacements = rows.filter(row => dates.has(row.spend_date)).length, weeks = new Set(rows.map(row => mondayOf(row.spend_date))).size;
       const total = rows.reduce((sum, row) => sum + row.amount, 0);
-      const preview = [`${files.length} statements`, `${transactionCount} transactions found`, `${rows.length} complete weeks: ${rows[0].weekStart} to ${rows.at(-1).weekEnd}`, `${money(total)} spending`, `${replacements} existing weeks will be replaced`, '', 'Import these weekly totals?'].join('\n');
+      const preview = [`${files.length} statements`, `${transactionCount} transactions found`, `${rows.length} covered dates: ${rows[0].spend_date} to ${rows.at(-1).spend_date}`, `${weeks} affected weeks`, `${money(total)} spending`, `${replacements} existing dates will be replaced`, '', 'Import these daily totals?'].join('\n');
       if (!window.confirm(preview)) { status.textContent = 'Import cancelled.'; return; }
-      await this.repo.saveActualWeeklySpends(rows);
+      await this.repo.saveStatementDailySpend(rows);
       this.data = this.repo.getData();
       this.refresh();
       this.renderActualSpendControls();
-      status.textContent = `${files.length} statements and ${rows.length} weeks imported.`;
+      status.textContent = `${files.length} statements and ${rows.length} covered dates imported.`;
     } catch (error) {
       console.error(error);
       status.textContent = error.message || 'The statements could not be imported.';
