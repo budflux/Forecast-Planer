@@ -422,9 +422,17 @@ input[type="text"][readonly] {
 .actual-spend-controls {
   display: grid;
   flex: 1 1 auto;
-  grid-template-columns: repeat(3, minmax(8rem, 1fr)) max-content;
+  grid-template-columns: repeat(5, minmax(7rem, 1fr));
   align-items: end;
-  gap: 0.5rem;
+  gap: 0.75rem;
+}
+
+.actual-spend-controls > div {
+  padding: 0.35rem;
+}
+
+.actual-spend-controls > button {
+  grid-column: 5;
 }
 
 .purchase-toolbar > button {
