@@ -400,7 +400,8 @@ header button.active {
 
 /* Placeholder - Header duplicate removed */
 
-#purchase-total {
+#purchase-total,
+#purchase-spent {
   width: auto;
   margin-left: 0.5rem;
 }
@@ -437,7 +438,8 @@ input[type="text"][readonly] {
   white-space: nowrap;
 }
 
-#purchase-total {
+#purchase-total,
+#purchase-spent {
   width: 8rem;
   min-height: 36px;
 }
