@@ -240,6 +240,7 @@ class CostProjectorApp {
       if (action === 'delete-rental' && this.data.rentals.length > 1) { this.data.rentals.pop(); this.save(); this.render(); }
       if (action === 'delete-deposit' && this.data.deposits.length > 1) { this.data.deposits.pop(); this.save(); this.render(); }
       if (action === 'add-purchase') this.add('purchases', { date: '', description: '', amount: 0, includeFlag: 1 });
+      if (action === 'delete-purchase' && this.data.purchases.length && window.confirm('Delete the top purchase row?')) { this.data.purchases.shift(); this.save(); this.render(); }
       if (action === 'add-rate') this.addRate();
       if (event.target.closest('[data-delete]')) this.remove(event.target.closest('[data-delete]').dataset.delete, event.target.closest('[data-delete]').dataset.id);
     });

@@ -446,6 +446,9 @@ input[type="text"][readonly] {
 
 .purchase-toolbar > button {
   flex: 0 0 auto;
+}
+
+.purchase-toolbar > button:first-of-type {
   margin-left: auto;
 }
 
