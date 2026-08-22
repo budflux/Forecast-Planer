@@ -17,8 +17,7 @@ The app is static HTML/CSS/vanilla JavaScript hosted by GitHub Pages. Supabase p
 
 ## Main files
 
-- `index.html` — GitHub Pages entry point.
-- `model.html` — duplicate local entry page; keep UI changes synchronized with `index.html`.
+- `index.html` — local and GitHub Pages entry point.
 - `script.js` — Supabase repository, PDF parser, forecast engine, rendering, authentication, and event handling.
 - `new.css` — main application styling.
 - `ExcelStyleWeekly.html`, `report.js`, `report.css` — weekly report.

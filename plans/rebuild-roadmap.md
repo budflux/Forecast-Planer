@@ -15,7 +15,7 @@ No input table is to be replaced by a summary-only widget.
 
 ## Current-state findings
 
-### Refactored files (`model.html`, `new.css`, `script.js`)
+### Refactored files (`index.html`, `new.css`, `script.js`)
 
 - The HTML omits fixed costs, offset deposits, rental table headers/actions, interest-rate changes, loan summary, offset targets, forecast columns, and the report/update behavior.
 - `DataRepository` only has complete CRUD for earnings, rentals, and purchases. Deposits, fixed costs, loan inputs, and forecast results are missing.
@@ -26,7 +26,7 @@ No input table is to be replaced by a summary-only widget.
 
 ## Required HTML inventory
 
-Restore these structures in `model.html`:
+Restore these structures in `index.html`:
 
 ### Loan Settings page
 
@@ -85,7 +85,7 @@ Every input needs a visible `<label>` or an accessible table/header association.
 
 ## Phase 2 — Rebuild the HTML and rendering
 
-1. Expand `model.html` with the complete required HTML inventory above.
+1. Expand `index.html` with the complete required HTML inventory above.
 2. Keep static table headers in HTML; render only repeatable rows into their existing containers.
 3. Add one renderer per table, backed only by state:
    - `renderLoanSettings`
