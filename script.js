@@ -230,10 +230,13 @@ class CostProjectorApp {
       const action = event.target.closest('[data-action]')?.dataset.action;
       if (event.target.closest('[data-page]')) this.showPage(event.target.closest('[data-page]').dataset.page);
       if (action === 'upload-statement') document.getElementById('statement-upload').click();
+      if (action === 'toggle-section') { const button = event.target.closest('button'), hidden = button.getAttribute('aria-expanded') === 'true'; let section = button.closest('.sheet-header').nextElementSibling; while (section && !section.classList.contains('sheet-header')) { section.hidden = hidden; section = section.nextElementSibling; } button.setAttribute('aria-expanded', String(!hidden)); button.textContent = hidden ? '›' : '⌄'; button.setAttribute('aria-label', `${hidden ? 'Show' : 'Hide'} ${button.closest('.sheet-header').querySelector('h2').textContent}`); }
       if (action === 'report') this.openForecastReport();
       if (action === 'sign-out') supabaseClient.auth.signOut();
       if (action === 'add-earning') this.add('earnings', { fromDate: '', toDate: '', weeklyWage: 0, weeklySpend: 0 });
+      if (action === 'delete-earning' && this.data.earnings.length > 1) { this.data.earnings.pop(); this.save(); this.render(); }
       if (action === 'add-fixed') this.add('fixedCosts', { startYear: 0, endYear: 0, totalYearlyCost: 0 });
+      if (action === 'delete-fixed' && this.data.fixedCosts.length > 1) { this.data.fixedCosts.pop(); this.save(); this.render(); }
       if (action === 'add-deposit') this.add('deposits', { depositDate: '', description: '', amount: 0 });
       if (action === 'add-rental') this.add('rentals', { fromDate: '', toDate: '', weeklyRental: 0 });
       if (action === 'delete-rental' && this.data.rentals.length > 1) { this.data.rentals.pop(); this.save(); this.render(); }

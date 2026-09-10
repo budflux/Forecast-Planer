@@ -175,6 +175,23 @@ button {
   min-width: 140px;
 }
 
+.sheet-header [data-action="toggle-section"] {
+  min-width: 42px;
+  border-color: transparent;
+  background: transparent;
+  color: #222;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.sheet-header [data-action="toggle-section"]:hover {
+  background: #e5e9ed;
+}
+
+[hidden] {
+  display: none !important;
+}
+
 /* ------------------
    Generic Grids
 ------------------ */
