@@ -418,8 +418,7 @@ header button.active {
 /* Placeholder - Header duplicate removed */
 
 #purchase-total,
-#purchase-spent,
-#average-spent {
+#purchase-spent {
   width: auto;
   margin-left: 0.5rem;
 }
@@ -457,8 +456,7 @@ input[type="text"][readonly] {
 }
 
 #purchase-total,
-#purchase-spent,
-#average-spent {
+#purchase-spent {
   width: 8rem;
   min-height: 36px;
 }
