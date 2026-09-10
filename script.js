@@ -10,8 +10,7 @@ const dateOnly = value => {
 };
 const validDate = value => value && !Number.isNaN(dateOnly(value).getTime());
 const inputDate = value => { const date = dateOnly(value); return validDate(value) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''; };
-const mondayOf = value => { const date = dateOnly(value); if (!validDate(value)) return ''; date.setDate(date.getDate() - ((date.getDay() + 6) % 7)); return inputDate(date); };
-const sundayOf = value => { const monday = dateOnly(value); if (!validDate(value)) return ''; monday.setDate(monday.getDate() + 6); return inputDate(monday); };
+const weekStartOf = value => { const date = dateOnly(value); if (!validDate(value)) return ''; date.setDate(date.getDate() - ((date.getDay() + 3) % 7)); return inputDate(date); };
 const inRange = (date, from, to) => validDate(from) && validDate(to) && dateOnly(date) >= dateOnly(from) && dateOnly(date) <= dateOnly(to);
 const isDateInWeek = (value, weekStart) => inRange(value, weekStart, new Date(dateOnly(weekStart).getTime() + 6 * 86400000));
 const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
@@ -153,8 +152,8 @@ function runForecast(settings, data) {
     console.warn('[forecast skipped] incomplete loan settings');
     return { weeklyResults: [], totalInterest: 0 };
   }
-  const results = [], wageAudit = [], start = dateOnly(mondayOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
-  const statementByDate = Object.fromEntries((data.statementDailySpend || []).map(row => [row.spend_date, Number(row.amount)])), currentWeekStart = mondayOf(new Date());
+  const results = [], wageAudit = [], start = dateOnly(weekStartOf(settings.loanStartDate)), weeks = Number(settings.loanTerm) * 52;
+  const statementByDate = Object.fromEntries((data.statementDailySpend || []).map(row => [row.spend_date, Number(row.amount)])), currentWeekStart = weekStartOf(new Date());
   const initialOffset = data.deposits.filter(row => validDate(row.depositDate || row.date) && dateOnly(row.depositDate || row.date) < start).reduce((sum, row) => sum + Number(row.amount || 0), 0);
   let balance = Number(settings.loanAmount), offset = initialOffset, repayment = weeklyRepayment(balance, settings.interestRate, settings.loanTerm), previousRate, loanFullyPaid = false, redrawBalance = 0;
   if (initialOffset) console.log('[initial offset]', { amount: initialOffset, loanStartDate: settings.loanStartDate });
@@ -265,7 +264,7 @@ class CostProjectorApp {
         }
       }
       const rows = [...daily.values()].sort((a, b) => a.spend_date.localeCompare(b.spend_date)), dates = new Set(this.data.statementDailySpend.map(row => row.spend_date));
-      const replacements = rows.filter(row => dates.has(row.spend_date)).length, weeks = new Set(rows.map(row => mondayOf(row.spend_date))).size;
+      const replacements = rows.filter(row => dates.has(row.spend_date)).length, weeks = new Set(rows.map(row => weekStartOf(row.spend_date))).size;
       const total = rows.reduce((sum, row) => sum + row.amount, 0);
       const preview = [`${files.length} statements`, `${transactionCount} transactions found`, `${rows.length} covered dates: ${rows[0].spend_date} to ${rows.at(-1).spend_date}`, `${weeks} affected weeks`, `${money(total)} spending`, `${replacements} existing dates will be replaced`, '', 'Import these daily totals?'].join('\n');
       if (!window.confirm(preview)) { status.textContent = 'Import cancelled.'; return; }

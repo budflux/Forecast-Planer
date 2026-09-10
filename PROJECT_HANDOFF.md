@@ -77,7 +77,7 @@ After the daily migration, statements must be re-uploaded so daily coverage is p
 
 ## Weekly spending logic
 
-Weeks run Monday–Sunday. The forecast itself starts on the Monday of the configured loan-start week.
+Weeks run Thursday–Wednesday. The forecast itself starts on the Thursday of the configured loan-start week.
 
 For a historical week:
 
