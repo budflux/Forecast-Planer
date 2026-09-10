@@ -3,6 +3,7 @@ body { margin: 0; padding: 1rem; color: #222; background: #f4f6f8; font-family: 
 main { max-width: 1600px; margin: 0 auto; }
 .report-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 h1 { margin: 0; }
+#report-average-spent { font-weight: 700; }
 button { min-height: 42px; padding: .5rem 1rem; border: 1px solid #1f4e79; border-radius: 6px; background: #1f4e79; color: white; font-weight: 600; cursor: pointer; }
 .table-wrapper { max-height: calc(100vh - 120px); overflow: auto; background: white; border: 1px solid #d8dde4; }
 table { width: 100%; border-collapse: collapse; white-space: nowrap; }

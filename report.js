@@ -19,6 +19,8 @@ const fields = [
 ];
 
 document.getElementById('report-summary').textContent = `${results.length} weekly forecast results`;
+const elapsedWeeks = results.filter(row => new Date(row.weekDate) <= new Date());
+document.getElementById('report-average-spent').textContent = `Average weekly spend from Week 1: ${money(elapsedWeeks.reduce((sum, row) => sum + Number(row.weeklySpend || 0), 0) / (elapsedWeeks.length || 1))}`;
 document.getElementById('report-body').innerHTML = results.map(row => {
   const spendClass = row.actualSpend == null ? '' : row.actualSpend > row.forecastSpend ? 'spend-over' : row.actualSpend < row.forecastSpend ? 'spend-under' : '';
   const cells = fields.map((field, index) => `<td class="${index === 5 ? spendClass : ''}">${field(row)}</td>`).join('');
