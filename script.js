@@ -175,8 +175,10 @@ function runForecast(settings, data) {
     const matchingDeposits = data.deposits.filter(row => isDateInWeek(row.depositDate || row.date, current));
     const deposits = matchingDeposits.reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const weeklyFixed = Number(fixed?.totalYearlyCost || 0) / 52;
-    const surplus = Number(earning.weeklyWage || 0) - weeklySpend - weeklyFixed + Number(rental?.weeklyRental || 0) - (balance > 0 ? repayment : 0);
-    offset = Math.max(0, offset + surplus + deposits - purchases);
+    const weeklyIncome = Number(earning.weeklyWage || 0);
+    const surplus = weeklyIncome - weeklySpend - weeklyFixed + Number(rental?.weeklyRental || 0) - (balance > 0 ? repayment : 0);
+    const weeklySurplus = surplus + deposits - purchases;
+    offset = Math.max(0, offset + weeklySurplus);
     if (deposits) console.log('[deposit forecast]', { depositDate: matchingDeposits[0].depositDate || matchingDeposits[0].date, weekDate: current.toISOString().slice(0, 10), deposits, offset });
     const interest = Math.max(0, balance - offset) * rate / 100 / 52;
     const principal = Math.max(0, Math.min(repayment - interest, balance));
@@ -188,7 +190,7 @@ function runForecast(settings, data) {
     }
     if (loanFullyPaid) redrawBalance = Math.max(0, redrawBalance - repayment);
     const redrawAmount = loanFullyPaid ? redrawBalance : calculateRedraw(settings.loanAmount, rate, settings.loanTerm, week + 1, balance);
-    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklySpend, forecastSpend, actualSpend: actualSpend ?? null, statementCoveredDays, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
+    results.push({ weekNumber: week + 1, weekDate: current, weekStart, rate, weeklyIncome, weeklyRental: Number(rental?.weeklyRental || 0), purchases, weeklySpend, weeklySurplus, forecastSpend, actualSpend: actualSpend ?? null, statementCoveredDays, weeklyDeposits: deposits, interest, principal, repayment, loanBalance: balance, offsetBalance: offset, redrawAmount, gap: offset - balance });
   }
   const wageAuditSignature = JSON.stringify({ loanStartDate: settings.loanStartDate, earnings: data.earnings });
   if (wageAuditSignature !== lastWageAuditSignature) {
