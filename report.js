@@ -6,10 +6,11 @@ const fields = [
   row => row.weekNumber,
   row => date(row.weekStart || row.weekDate),
   row => `${Number(row.rate || 0).toFixed(2)}%`,
+  row => money(row.weeklyIncome),
   row => money(row.weeklyRental),
-  row => money(row.purchases),
+  row => money(Number(row.purchases || 0) - Number(row.weeklyDeposits || 0)),
   row => money(row.weeklySpend),
-  row => money(row.weeklyDeposits),
+  row => row.weeklySurplus == null ? '—' : money(row.weeklySurplus),
   row => money(row.interest),
   row => money(row.principal),
   row => money(row.repayment),
@@ -24,7 +25,7 @@ const elapsedWeeks = results.filter(row => new Date(`${row.weekStart}T00:00:00`)
 document.getElementById('report-average-spent').textContent = `Average weekly spend from Week 1: ${money(elapsedWeeks.reduce((sum, row) => sum + Number(row.weeklySpend || 0), 0) / (elapsedWeeks.length || 1))}`;
 document.getElementById('report-body').innerHTML = results.map(row => {
   const spendClass = row.actualSpend == null ? '' : row.actualSpend > row.forecastSpend ? 'spend-over' : row.actualSpend < row.forecastSpend ? 'spend-under' : '';
-  const cells = fields.map((field, index) => `<td class="${index === 5 ? spendClass : ''}">${field(row)}</td>`).join('');
+  const cells = fields.map((field, index) => `<td class="${index === 6 ? spendClass : ''}">${field(row)}</td>`).join('');
   return `<tr class="${isCurrentWeek(row) ? 'current-week' : Number(row.loanBalance) <= 0 ? 'loan-paid' : ''}">${cells}</tr>`;
 }).join('');
 document.getElementById('close-report').addEventListener('click', () => window.close());

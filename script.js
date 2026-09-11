@@ -308,7 +308,15 @@ class CostProjectorApp {
   renderPurchaseTotal() { const today = inputDate(new Date()); this.setValue('purchase-total', money(this.data.purchases.filter(row => Number(row.includeFlag)).reduce((sum, row) => sum + Number(row.amount || 0), 0))); this.setValue('purchase-spent', money(this.data.purchases.filter(row => row.date && row.date <= today).reduce((sum, row) => sum + Number(row.amount || 0), 0))); }
   renderForecast() { this.renderPurchaseTotal(); const container = document.getElementById('forecast-container'); const quarters = {}; this.forecast.weeklyResults.forEach(row => { const key = `${row.weekDate.getFullYear()}-Q${Math.floor(row.weekDate.getMonth()/3)+1}`; quarters[key] = { ...row, spend: (quarters[key]?.spend || 0) + row.purchases, deposits: (quarters[key]?.deposits || 0) + row.weeklyDeposits }; }); container.innerHTML = Object.entries(quarters).map(([period, row]) => `<div class="forecast-grid forecast-row"><div class="card period">${period}</div><div class="card">${money(row.spend)}</div><div class="card">${money(row.deposits)}</div><div class="card">${money(row.offsetBalance)}</div><div class="card">${money(row.loanBalance)}</div><div class="card">${money(row.redrawAmount)}</div><div class="card">${money(row.gap)}</div></div>`).join(''); }
   updateChangeRepayment() { document.getElementById('changeRepayment').value = money(weeklyRepayment(this.settings.loanAmount, Number(document.getElementById('changeRate').value || 0), this.settings.loanTerm)); }
-  openForecastReport() { localStorage.setItem('forecastResults', JSON.stringify(this.forecast.weeklyResults)); window.open('ExcelStyleWeekly.html', '_blank'); }
+  openForecastReport() {
+    const rows = this.forecast.weeklyResults.map((row, index, results) => ({
+      ...row,
+      weeklyIncome: Number(this.data.earnings.find(earning => inRange(row.weekDate, earning.fromDate, earning.toDate))?.weeklyWage || 0),
+      weeklySurplus: index ? row.offsetBalance - results[index - 1].offsetBalance : null,
+    }));
+    localStorage.setItem('forecastResults', JSON.stringify(rows));
+    window.open('ExcelStyleWeekly.html', '_blank');
+  }
 }
 
 new CostProjectorApp().start().catch(error => { console.error(error); document.body.insertAdjacentHTML('afterbegin', '<p role="alert">The planner could not load its database.</p>'); });
